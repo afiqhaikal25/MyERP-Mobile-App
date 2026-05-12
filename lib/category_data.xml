@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="pm_equipment_category_default" model="maintenance.equipment.category">
+        <field name="name">Default</field>
+    </record>
+    <record id="pm_equipment_default" model="maintenance.equipment">
+        <field name="name">Default Equipment</field>
+        <field name="category_id" ref="pm_equipment_category_default"/>
+    </record>
+
+
+        <!-- Kategori -->
+        <record id="category_operating_system" model="maintenance.task.category">
+            <field name="name">OPERATING SYSTEM</field>
+        </record>
+        <record id="category_cpu" model="maintenance.task.category">
+            <field name="name">CPU</field>
+        </record>
+        <record id="category_cd_rom" model="maintenance.task.category">
+            <field name="name">CD - ROM</field>
+        </record>
+        <record id="category_lan_connections" model="maintenance.task.category">
+            <field name="name">LAN CONNECTIONS</field>
+        </record>
+        <record id="category_performance" model="maintenance.task.category">
+            <field name="name">PERFORMANCE</field>
+        </record>
+        <record id="category_keyboard" model="maintenance.task.category">
+            <field name="name">KEYBOARD</field>
+        </record>
+        <record id="category_monitor" model="maintenance.task.category">
+            <field name="name">MONITOR</field>
+        </record>
+        <record id="category_mouse" model="maintenance.task.category">
+            <field name="name">MOUSE</field>
+        </record>
+        <record id="category_ssd" model="maintenance.task.category">
+            <field name="name">SOLID STATE DRIVE</field>
+        </record>
+        <record id="category_cleaning" model="maintenance.task.category">
+            <field name="name">CLEANING</field>
+        </record>
+        <record id="category_other" model="maintenance.task.category">
+            <field name="name">OTHER</field>
+        </record>
+        <record id="category_printer" model="maintenance.task.category">
+            <field name="name">PRINTER</field>
+        </record>
+
+        <!-- Template PC/Laptop -->
+        <record id="maintenance_task_template_pc_laptop" model="maintenance.task.template">
+            <field name="name">Default PC/Laptop</field>
+            <field name="equipment_type">pc_laptop</field>
+        </record>
+
+        <!-- Lines PC/Laptop (SETIAP satu ada equipment) -->
+        <record id="maintenance_task_template_line_1" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Update for latest Windows Patches and Pattern</field>
+            <field name="category_id" ref="category_operating_system"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_2" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Can Boot Smoothly/Working</field>
+            <field name="category_id" ref="category_operating_system"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_3" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Can Shutdown properly</field>
+            <field name="category_id" ref="category_operating_system"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_4" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Empty Recycle Bin</field>
+            <field name="category_id" ref="category_operating_system"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_5" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Run disk cleanup</field>
+            <field name="category_id" ref="category_operating_system"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_6" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Check Power Supply / fan / CPU status</field>
+            <field name="category_id" ref="category_cpu"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_7" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Physical hardware cleanliness</field>
+            <field name="category_id" ref="category_cpu"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_8" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Check USB functionality</field>
+            <field name="category_id" ref="category_cpu"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_9" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Busy LED</field>
+            <field name="category_id" ref="category_cd_rom"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_10" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Eject Button</field>
+            <field name="category_id" ref="category_cd_rom"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_11" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Have Connection?</field>
+            <field name="category_id" ref="category_lan_connections"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_12" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Check Memory Usage</field>
+            <field name="category_id" ref="category_performance"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_13" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Check CPU Usage</field>
+            <field name="category_id" ref="category_performance"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_14" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Check Keyboard Function</field>
+            <field name="category_id" ref="category_keyboard"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_15" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Check power on / off</field>
+            <field name="category_id" ref="category_monitor"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_16" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Scroll testing (roller / laser)</field>
+            <field name="category_id" ref="category_mouse"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_17" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Both button functioning</field>
+            <field name="category_id" ref="category_mouse"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_18" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Scandisk</field>
+            <field name="category_id" ref="category_ssd"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_19" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Clean Monitor Screen</field>
+            <field name="category_id" ref="category_cleaning"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_20" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Clean keyboard</field>
+            <field name="category_id" ref="category_cleaning"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_21" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Clean Mouse</field>
+            <field name="category_id" ref="category_cleaning"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_22" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Clean CD/DVD and case</field>
+            <field name="category_id" ref="category_cleaning"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_23" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Set and Turn Off Windows Firewall</field>
+            <field name="category_id" ref="category_other"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_24" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Set and Tick Password User to never expired</field>
+            <field name="category_id" ref="category_other"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_25" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Enable Windows Defender</field>
+            <field name="category_id" ref="category_other"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_26" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Run Windows Troubleshooter</field>
+            <field name="category_id" ref="category_other"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_27" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Uninstall Software Antivirus that not related</field>
+            <field name="category_id" ref="category_other"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_line_28" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_pc_laptop"/>
+            <field name="name">Check User Name (Masterlist)</field>
+            <field name="category_id" ref="category_other"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+
+        <!-- Template Printer -->
+        <record id="maintenance_task_template_printer" model="maintenance.task.template">
+            <field name="name">Default Printer</field>
+            <field name="equipment_type">printer</field>
+        </record>
+
+        <!-- Lines Printer (SETIAP satu ada equipment) -->
+        <record id="maintenance_task_template_printer_line_1" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Check data cable and power cord</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_printer_line_2" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Cleaning printer interior (paper and dust)</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_printer_line_3" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Checking Toner / ink level (%) BLACK</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_printer_line_4" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Checking Toner / ink level (%) Yellow</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_printer_line_5" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Checking Toner / ink level (%) Cyan</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_printer_line_6" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Checking Toner / ink level (%) Magenta</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_printer_line_7" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Test print and Print configuration page (Please attach with this report)</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+        <record id="maintenance_task_template_printer_line_8" model="maintenance.task.template.line">
+            <field name="template_id" ref="maintenance_task_template_printer"/>
+            <field name="name">Print Statistic Toner (Please attach with this report)</field>
+            <field name="category_id" ref="category_printer"/>
+            <field name="equipment" ref="pm_equipment_default"/>
+            <field name="equipment_task" ref="pm_equipment_default"/>
+        </record>
+
+</odoo>
