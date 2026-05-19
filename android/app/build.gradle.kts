@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.sigmarectrix.ticket"
-    compileSdk = 35 // ✅ Explicitly set for Android 13
+    compileSdk = 36 // Match plugins (e.g. geolocator_android, image_picker_android)
 
     ndkVersion = "27.0.12077973" // ✅ Required for Firebase, Notifications, etc.
 
@@ -23,8 +23,8 @@ android {
 
     defaultConfig {
         applicationId = "com.sigmarectrix.ticket"
-        minSdk = 23
-        targetSdk = 35 // ✅ Explicitly set for Android 13
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

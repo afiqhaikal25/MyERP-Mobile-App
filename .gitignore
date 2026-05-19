@@ -67,3 +67,7 @@ GoogleService-Info.plist
 *_key.txt
 *_secret.txt
 config_secret.dart
+
+# Release APK (build locally; do not commit)
+*.apk
+myerp.com Mobile App.apk

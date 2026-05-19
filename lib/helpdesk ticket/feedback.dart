@@ -323,145 +323,167 @@ Future<void> _submitFeedback() async {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDarkMode ? Colors.black : Colors.white;
     final textColor = isDarkMode ? Colors.white : const Color(0xFF282454);
-    final subTextColor = isDarkMode ? Colors.white70 : Colors.grey[600];
-    final signatureBg = isDarkMode ? Colors.black : Colors.white;
+    final topBarForeground =
+        isDarkMode ? Colors.black87 : const Color(0xFF282454);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'CUSTOMER FEEDBACK',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF282454),
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'images/wood.png',
-              fit: BoxFit.cover,
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.arrow_back, color: topBarForeground),
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Customer Feedback',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                        color: topBarForeground,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 48),
+                ],
+              ),
             ),
-          ),
-          SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Service Performance Criteria Card
-                _buildCustomCard(
-                  isDarkMode: isDarkMode,
-                  child: Container(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+            Expanded(
+              child: SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Service Performance Criteria Card
+                    _buildCustomCard(
+                      isDarkMode: isDarkMode,
+                      child: Container(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              flex: 5,
-                              child: Text(
-                                'Service Performance Criteria',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: textColor,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 5,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                children: List.generate(
-                                  5,
-                                  (index) => Text(
-                                    '${index + 1}',
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 5,
+                                  child: Text(
+                                    'Service Performance Criteria',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 13,
+                                      fontSize: 14,
                                       color: textColor,
                                     ),
                                   ),
                                 ),
-                              ),
+                                Expanded(
+                                  flex: 5,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceAround,
+                                    children: List.generate(
+                                      5,
+                                      (index) => Text(
+                                        '${index + 1}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: textColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Divider(color: textColor),
+                            _buildCriteriaRating(
+                              '1. Keeping you informed during problem resolution',
+                              _informedRating,
+                              (value) =>
+                                  setState(() => _informedRating = value),
+                              textColor: textColor,
+                            ),
+                            _buildCriteriaRating(
+                              '2. Attitude of engineer',
+                              _attitudeRating,
+                              (value) =>
+                                  setState(() => _attitudeRating = value),
+                              textColor: textColor,
+                            ),
+                            _buildCriteriaRating(
+                              '3. Technical ability of engineer',
+                              _technicalRating,
+                              (value) =>
+                                  setState(() => _technicalRating = value),
+                              textColor: textColor,
+                            ),
+                            _buildCriteriaRating(
+                              '4. Time taken to resolve problem',
+                              _timeRating,
+                              (value) => setState(() => _timeRating = value),
+                              textColor: textColor,
+                            ),
+                            _buildCriteriaRating(
+                              '5. Did the engineer arrive on time?',
+                              _punctualityRating,
+                              (value) =>
+                                  setState(() => _punctualityRating = value),
+                              textColor: textColor,
+                            ),
+                            _buildCriteriaRating(
+                              '6. Overall satisfaction with this support experience',
+                              _overallRating,
+                              (value) =>
+                                  setState(() => _overallRating = value),
+                              textColor: textColor,
                             ),
                           ],
                         ),
-                        Divider(color: textColor),
-                        _buildCriteriaRating(
-                          '1. Keeping you informed during problem resolution',
-                          _informedRating,
-                          (value) => setState(() => _informedRating = value),
-                          textColor: textColor,
-                        ),
-                        _buildCriteriaRating(
-                          '2. Attitude of engineer',
-                          _attitudeRating,
-                          (value) => setState(() => _attitudeRating = value),
-                          textColor: textColor,
-                        ),
-                        _buildCriteriaRating(
-                          '3. Technical ability of engineer',
-                          _technicalRating,
-                          (value) => setState(() => _technicalRating = value),
-                          textColor: textColor,
-                        ),
-                        _buildCriteriaRating(
-                          '4. Time taken to resolve problem',
-                          _timeRating,
-                          (value) => setState(() => _timeRating = value),
-                          textColor: textColor,
-                        ),
-                        _buildCriteriaRating(
-                          '5. Did the engineer arrive on time?',
-                          _punctualityRating,
-                          (value) => setState(() => _punctualityRating = value),
-                          textColor: textColor,
-                        ),
-                        _buildCriteriaRating(
-                          '6. Overall satisfaction with this support experience',
-                          _overallRating,
-                          (value) => setState(() => _overallRating = value),
-                          textColor: textColor,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Customer Signature
-                _buildSignatureSection('Customer Signature', _customerSignatureController, isDarkMode),
-                const SizedBox(height: 16),
-                // Submit Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF282454),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    onPressed: _submitFeedback,
-                    child: const Text(
-                      'Submit Feedback',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    const SizedBox(height: 16),
+                    _buildSignatureSection('Customer Signature',
+                        _customerSignatureController, isDarkMode),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF282454),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _submitFeedback,
+                        child: const Text(
+                          'Submit Feedback',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 24),
+                  ],
                 ),
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

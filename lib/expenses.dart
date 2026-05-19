@@ -2312,7 +2312,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
         children: [
           Column(
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               // Summary Cards (from Odoo: to report, under validation, to be reimbursed)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2344,11 +2344,11 @@ class _ExpensesPageState extends State<ExpensesPage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 14),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     color: isDark
                         ? const Color(0xFF262626)
@@ -2407,7 +2407,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               // Expenses List
               Expanded(
                 child: Builder(
@@ -2634,8 +2634,8 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 70,
-      padding: const EdgeInsets.all(8),
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF2D2D2D) : Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -2654,17 +2654,19 @@ class _SummaryCard extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 9,
+              height: 1.1,
               color: isDark ? Colors.white70 : Colors.grey.shade600,
               fontWeight: FontWeight.w500,
             ),
             overflow: TextOverflow.ellipsis,
+            maxLines: 2,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             'RM ${amount.toStringAsFixed(2)}',
             style: const TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.bold,
               color: Color(0xFF282454),
             ),
@@ -2694,20 +2696,21 @@ class _SectionTabButton extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 2),
       decoration: BoxDecoration(
         color: isSelected ? const Color(0xFF282454) : Colors.transparent,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
             child: Text(
               label,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11,
+                height: 1.15,
                 fontWeight: FontWeight.w700,
                 color: isSelected ? Colors.white : const Color(0xFF282454),
               ),
@@ -3487,106 +3490,5 @@ class _ExpenseReportCard extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _OdooActionResult {
-  final int? id;
-  final String? error;
-
-  const _OdooActionResult({this.id, this.error});
-}
-
-extension _ExpenseCompatOdoo on OdooService {
-  Future<double> getExpenseToReportTotal() async => 0;
-
-  Future<double> getExpenseUnderValidationTotal() async => 0;
-
-  Future<double> getExpenseToBeReimbursedTotal() async => 0;
-
-  Future<List<Map<String, dynamic>>> fetchMyExpenses() async => <Map<String, dynamic>>[];
-
-  Future<List<Map<String, dynamic>>> fetchMyExpenseReports() async =>
-      <Map<String, dynamic>>[];
-
-  Future<String?> deleteMyHrExpense(int expenseId) async => null;
-
-  Future<_OdooActionResult> createExpenseReportFromExpenses(
-    List<int> expenseIds, {
-    required String reportTitle,
-  }) async {
-    return const _OdooActionResult(id: null, error: 'Feature not available in this build');
-  }
-
-  Future<String?> renameExpenseReport({
-    required int reportId,
-    required String newName,
-  }) async =>
-      'Feature not available in this build';
-
-  Future<String?> deleteExpenseReport(int reportId) async =>
-      'Feature not available in this build';
-
-  Future<String?> submitExpenseReportToManager(int reportId) async =>
-      'Feature not available in this build';
-
-  Future<String?> resetExpenseReportToDraft(int reportId) async =>
-      'Feature not available in this build';
-
-  Future<String?> fetchExpenseSheetReportPdf(
-    int reportId, {
-    bool preferSigma = false,
-  }) async =>
-      null;
-
-  Future<String?> removeExpenseFromReport({
-    required int expenseId,
-    required int reportId,
-  }) async =>
-      'Feature not available in this build';
-
-  Future<String?> uploadExpenseAttachment({
-    required int expenseId,
-    required String fileName,
-    required Uint8List bytes,
-    String? mimeType,
-  }) async =>
-      'Feature not available in this build';
-
-  Future<String?> deleteExpenseAttachment(int attachmentId) async =>
-      'Feature not available in this build';
-
-  Future<List<Map<String, dynamic>>> getExpenseAttachments(int expenseId) async =>
-      <Map<String, dynamic>>[];
-
-  Future<Uint8List?> getExpenseAttachmentBytes(int id, String name) async => null;
-
-  Future<String?> getExpenseAttachmentFile(int id, String name) async => null;
-
-  Future<List<Map<String, dynamic>>> fetchExpenseProductList() async =>
-      <Map<String, dynamic>>[];
-
-  Future<List<Map<String, dynamic>>> fetchExpenseProjectList() async =>
-      <Map<String, dynamic>>[];
-
-  Future<List<Map<String, dynamic>>> fetchExpenseTaxList() async =>
-      <Map<String, dynamic>>[];
-
-  Future<_OdooActionResult> createHrExpense({
-    required int productId,
-    required String name,
-    required double totalAmount,
-    required DateTime date,
-    required bool paidByEmployee,
-    String? note,
-    int? projectId,
-    String? fromAddress,
-    String? toAddress,
-    String? wayMode,
-    double? quantity,
-    double? unitAmount,
-    List<int>? taxIds,
-  }) async {
-    return const _OdooActionResult(id: null, error: 'Feature not available in this build');
   }
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:ticket/odoo_service.dart';
@@ -1148,96 +1149,108 @@ class _TaskPageState extends State<TaskPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: widget.isDarkMode ? Colors.black : const Color(0xFFE8E6F3),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: widget.isDarkMode ? Colors.grey[900] : const Color(0xFF282454),
-        title: Text(
-          widget.selectedProject != null 
-            ? "Tasks - ${widget.selectedProject}"
-            : "My Tasks",
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            letterSpacing: 0.5,
-          ),
-        ),
-        titleSpacing: 0,
-        actions: [
-          // Test button to add a task with due date
-          IconButton(
-            icon: const Icon(Icons.bug_report, color: Colors.white),
-            onPressed: () async {
-              // Create a test task with due date
-              final testTask = {
-                'id': DateTime.now().millisecondsSinceEpoch.toString(),
-                'title': 'Test Task with Countdown',
-                'project': 'Test Project',
-                'assignedTo': '1',
-                'assignedToName': 'Test User',
-                'assignedToEmail': 'test@example.com',
-                'assignedBy': widget.currentUserId,
-                'dueDate': DateTime.now().add(const Duration(days: 2)).toIso8601String(), // 2 days from now
-                'dueDateDisplay': DateFormat('dd/MM/yyyy').format(DateTime.now().add(const Duration(days: 2))),
-                'status': 'pending',
-                'createdAt': DateTime.now().toIso8601String(),
-                'createdAtDisplay': DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()),
-              };
-              
-              if (mounted) {
-                setState(() {
-                  _localTasks.add(testTask);
-                });
-              }
-              
-              await _saveLocalTasks();
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Test task added with countdown!'),
-                  backgroundColor: Colors.green,
+    final iconColor =
+        widget.isDarkMode ? Colors.white70 : const Color(0xFF282454);
+
+    final listBody = _localTasks.isEmpty
+        ? Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.task_alt,
+                  size: 64,
+                  color: Colors.grey[400],
                 ),
-              );
+                const SizedBox(height: 16),
+                Text(
+                  widget.selectedProject != null
+                      ? 'No tasks for ${widget.selectedProject} yet.\nTap the + button to assign a new task.'
+                      : 'No tasks assigned yet.\nTap the + button to assign a new task.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          )
+        : ListView.builder(
+            itemCount: _localTasks.length,
+            itemBuilder: (context, index) {
+              return _buildTaskCard(_localTasks[index], index);
             },
-            tooltip: 'Add Test Task',
-          ),
-        ],
-      ),
-      body: _localTasks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+          );
+
+    return Scaffold(
+      backgroundColor:
+          widget.isDarkMode ? const Color(0xFF111315) : Colors.white,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
+              child: Row(
                 children: [
-                  Icon(
-                    Icons.task_alt,
-                    size: 64,
-                    color: Colors.grey[400],
+                  IconButton(
+                    icon: Icon(Icons.arrow_back, color: iconColor),
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).maybePop(),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    widget.selectedProject != null
-                        ? 'No tasks for ${widget.selectedProject} yet.\nTap the + button to assign a new task.'
-                        : 'No tasks assigned yet.\nTap the + button to assign a new task.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                  ),
+                  const Spacer(),
+                  if (kDebugMode)
+                    IconButton(
+                      icon: Icon(Icons.bug_report, color: iconColor),
+                      tooltip: 'Add Test Task',
+                      onPressed: () async {
+                        final testTask = {
+                          'id': DateTime.now().millisecondsSinceEpoch.toString(),
+                          'title': 'Test Task with Countdown',
+                          'project': 'Test Project',
+                          'assignedTo': '1',
+                          'assignedToName': 'Test User',
+                          'assignedToEmail': 'test@example.com',
+                          'assignedBy': widget.currentUserId,
+                          'dueDate': DateTime.now()
+                              .add(const Duration(days: 2))
+                              .toIso8601String(),
+                          'dueDateDisplay': DateFormat('dd/MM/yyyy').format(
+                              DateTime.now().add(const Duration(days: 2))),
+                          'status': 'pending',
+                          'createdAt': DateTime.now().toIso8601String(),
+                          'createdAtDisplay': DateFormat('dd/MM/yyyy HH:mm')
+                              .format(DateTime.now()),
+                        };
+
+                        if (mounted) {
+                          setState(() {
+                            _localTasks.add(testTask);
+                          });
+                        }
+
+                        await _saveLocalTasks();
+
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Test task added with countdown!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                    ),
                 ],
               ),
-            )
-          : ListView.builder(
-              itemCount: _localTasks.length,
-              itemBuilder: (context, index) {
-                return _buildTaskCard(_localTasks[index], index);
-              },
             ),
-          floatingActionButton: FloatingActionButton(
-      onPressed: _showAddOptionsDialog,
-      backgroundColor: const Color(0xFF282454),
-      child: const Icon(Icons.add, color: Colors.white),
-      tooltip: 'Add Task',
-    ),
+            Expanded(child: listBody),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddOptionsDialog,
+        backgroundColor: const Color(0xFF282454),
+        child: const Icon(Icons.add, color: Colors.white),
+        tooltip: 'Add Task',
+      ),
     );
   }
 

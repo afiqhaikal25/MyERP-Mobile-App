@@ -136,43 +136,7 @@ class _TimeOffPageState extends State<TimeOffPage> {
     // Tidak perlu scroll di build lagi
     return Scaffold(
       key: _scaffoldKey,
-      appBar: AppBar(
-        backgroundColor: isDarkMode ? Colors.black : const Color(0xFF282454),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.grid_view, color: Colors.white),
-          onPressed: () async {
-            final prefs = await SharedPreferences.getInstance();
-            final email = prefs.getString('email') ?? '';
-            final password = prefs.getString('password') ?? '';
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => HomePage(email: email, password: password)),
-            );
-          },
-        ),
-        title: Text('Time Off', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline, color: Colors.white),
-            tooltip: 'Leave Status Info',
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => const LeaveStatusInfoDialog(),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white),
-            onPressed: () {
-              _scaffoldKey.currentState?.openEndDrawer();
-            },
-          ),
-        ],
-      ),
+      backgroundColor: Colors.white,
       endDrawer: Drawer(
         child: SafeArea(
           child: Container(
@@ -580,61 +544,116 @@ class _TimeOffPageState extends State<TimeOffPage> {
         ),
       ),
       endDrawerEnableOpenDragGesture: false,
-      body: Stack(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Positioned.fill(
-            child: Image.asset(
-              isDarkMode ? 'images/woodb.png' : 'images/wood.png',
-              fit: BoxFit.cover,
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.grid_view, color: Color(0xFF282454)),
+                    tooltip: 'Home',
+                    onPressed: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      final email = prefs.getString('email') ?? '';
+                      final password = prefs.getString('password') ?? '';
+                      if (!context.mounted) return;
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) =>
+                                HomePage(email: email, password: password)),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.event_note,
+                      color: Color(0xFF282454), size: 22),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Time Off',
+                    style: TextStyle(
+                      color: Color(0xFF282454),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.help_outline, color: Color(0xFF282454)),
+                    tooltip: 'Leave Status Info',
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => const LeaveStatusInfoDialog(),
+                      );
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.menu, color: Color(0xFF282454)),
+                    tooltip: 'Menu',
+                    onPressed: () {
+                      _scaffoldKey.currentState?.openEndDrawer();
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
-          Column(
-            children: [
-              const SizedBox(height: 0),
-              // Calendar Content - Single Month Display
-              Expanded(
-                child: GestureDetector(
-                  onHorizontalDragEnd: (details) {
-                    if (details.primaryVelocity != null) {
-                      if (details.primaryVelocity! < 0) {
-                        // Swipe left - next month
-                        setState(() {
-                          if (_displayMonth == 12) {
-                            // If December, go to January of next year
-                            _displayMonth = 1;
-                            _startYear++;
-                          } else {
-                            // Go to next month
-                            _displayMonth++;
+          Expanded(
+            child: Stack(
+              children: [
+                const ColoredBox(color: Colors.white),
+                Column(
+                  children: [
+                    const SizedBox(height: 0),
+                    // Calendar Content - Single Month Display
+                    Expanded(
+                      child: GestureDetector(
+                        onHorizontalDragEnd: (details) {
+                          if (details.primaryVelocity != null) {
+                            if (details.primaryVelocity! < 0) {
+                              // Swipe left - next month
+                              setState(() {
+                                if (_displayMonth == 12) {
+                                  _displayMonth = 1;
+                                  _startYear++;
+                                } else {
+                                  _displayMonth++;
+                                }
+                              });
+                              getLeavesForAllMonths();
+                            } else if (details.primaryVelocity! > 0) {
+                              // Swipe right - previous month
+                              setState(() {
+                                if (_displayMonth == 1) {
+                                  _displayMonth = 12;
+                                  _startYear--;
+                                } else {
+                                  _displayMonth--;
+                                }
+                              });
+                              getLeavesForAllMonths();
+                            }
                           }
-                        });
-                        getLeavesForAllMonths();
-                      } else if (details.primaryVelocity! > 0) {
-                        // Swipe right - previous month
-                        setState(() {
-                          if (_displayMonth == 1) {
-                            // If January, go to December of previous year
-                            _displayMonth = 12;
-                            _startYear--;
-                          } else {
-                            // Go to previous month
-                            _displayMonth--;
-                          }
-                        });
-                        getLeavesForAllMonths();
-                      }
-                    }
-                  },
-                  child: CalendarMonthWidget(
-                    key: ValueKey('${_startYear}_${_displayMonth}_${mapLeaves.length}'),
-                    year: _startYear,
-                    month: _displayMonth,
-                    isDarkMode: isDarkMode,
-                    selectedLeaveTypes: selectedLeaveTypes,
-                  ),
+                        },
+                        child: CalendarMonthWidget(
+                          key: ValueKey(
+                              '${_startYear}_${_displayMonth}_${mapLeaves.length}'),
+                          year: _startYear,
+                          month: _displayMonth,
+                          isDarkMode: isDarkMode,
+                          selectedLeaveTypes: selectedLeaveTypes,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

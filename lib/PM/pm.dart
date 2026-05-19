@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../home.dart';
 import '../odoo_service.dart';
 import 'PMdetails.dart';
 import 'collectiondetails.dart';
@@ -39,9 +38,16 @@ class _PMPageState extends State<PMPage> {
   void initState() {
     super.initState();
     _loadDarkMode();
+    _bootstrapPm();
+  }
+
+  Future<void> _bootstrapPm() async {
+    await _odoo.loadSessionCredentials();
+    await _odoo.checkAndLoadUserCredentials();
     if (widget.initialFilterActive) {
       _statusFilter = _PmStatusFilter.active;
     }
+    if (!mounted) return;
     _refreshPmKanban(includeAll: _includeAllForStatus());
     _refreshPmDashboard();
   }
@@ -236,28 +242,137 @@ class _PMPageState extends State<PMPage> {
   }
 
   Future<void> _onHomeButtonPressed() async {
-    final prefs = await SharedPreferences.getInstance();
-    final email = prefs.getString('email') ?? widget.email;
-    final password = prefs.getString('password') ?? widget.password;
-
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => HomePage(
-          email: email,
-          password: password,
-          onThemeChanged: null,
-        ),
-      ),
-    );
+    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
+    final barInk = _isDarkMode ? Colors.white : const Color(0xFF282454);
+    final barMuted = _isDarkMode ? Colors.white70 : Colors.black54;
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: _buildContent(),
+      backgroundColor: _isDarkMode ? Colors.grey[900] : Colors.white,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: IconButton(
+                      icon: Icon(Icons.grid_view, color: barInk),
+                      onPressed: _onHomeButtonPressed,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      _selectedMenu == 'PM'
+                          ? 'Preventive Maintenance'
+                          : _selectedMenu,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: barInk,
+                        letterSpacing: 0.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: IconTheme(
+                      data: IconThemeData(color: barInk, size: 28),
+                      child: const Icon(Icons.arrow_drop_down, size: 28),
+                    ),
+                    onSelected: _onMenuSelected,
+                    itemBuilder: (BuildContext context) => const [
+                      PopupMenuItem<String>(
+                        value: 'PM',
+                        child: Row(
+                          children: [
+                            Icon(Icons.build,
+                                color: Color(0xFF282454), size: 20),
+                            SizedBox(width: 12),
+                            Text('PM'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'Collection',
+                        child: Row(
+                          children: [
+                            Icon(Icons.collections,
+                                color: Color(0xFF282454), size: 20),
+                            SizedBox(width: 12),
+                            Text('Collection'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'UAT',
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle,
+                                color: Color(0xFF282454), size: 20),
+                            SizedBox(width: 12),
+                            Text('UAT'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  PopupMenuButton<_PmStatusFilter>(
+                    tooltip: 'Filter PM: ${_filterLabel(_statusFilter)}',
+                    icon: Icon(
+                      Icons.filter_list,
+                      color: _selectedMenu == 'PM'
+                          ? (_statusFilter == _PmStatusFilter.all
+                              ? barInk
+                              : Colors.amberAccent)
+                          : barMuted,
+                    ),
+                    onSelected: (v) {
+                      setState(() {
+                        _statusFilter = v;
+                        _pmFuture = _odoo.fetchPmKanbanRequests(
+                          includeAll: _includeAllForStatus(),
+                          status: _statusKey(),
+                        );
+                      });
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem<_PmStatusFilter>(
+                        value: _PmStatusFilter.all,
+                        child: Text('All'),
+                      ),
+                      PopupMenuItem<_PmStatusFilter>(
+                        value: _PmStatusFilter.active,
+                        child: Text('Active'),
+                      ),
+                      PopupMenuItem<_PmStatusFilter>(
+                        value: _PmStatusFilter.complete,
+                        child: Text('Complete'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              color: _isDarkMode ? Colors.grey[900] : Colors.white,
+              child: _buildContent(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1053,7 +1168,6 @@ class _PmKanbanCard extends StatelessWidget {
                       final projectName = _m2oDisplay(data['project_id']);
                       if (projectId <= 0) return;
                       final requestId = _asInt(data['id']);
-                      if (requestId <= 0) return;
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -1088,7 +1202,6 @@ class _PmKanbanCard extends StatelessWidget {
                       final projectName = _m2oDisplay(data['project_id']);
                       if (projectId <= 0) return;
                       final requestId = _asInt(data['id']);
-                      if (requestId <= 0) return;
                       await Navigator.push(
                         context,
                         MaterialPageRoute(

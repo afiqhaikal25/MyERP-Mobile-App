@@ -2437,6 +2437,217 @@ class HelpdeskCheckController(http.Controller):
             return {"jsonrpc": "2.0", "error": {"message": str(e), "code": 500}}
 
 
+class HelpdeskMobileUpdateController(http.Controller):
+
+    @http.route('/api/update_description', type='json', auth='user', methods=['POST'], csrf=False)
+    def api_update_description(self, ticket_id, description, **kwargs):
+        """Append a Follow Up into helpdesk.ticket.description (sudo for mobile ACL)."""
+        try:
+            if not ticket_id or description is None:
+                return {"success": False, "error": "Invalid parameters", "code": 400}
+
+            ticket = request.env['helpdesk.ticket'].sudo().browse(int(ticket_id))
+            if not ticket.exists():
+                return {"success": False, "error": "Ticket not found", "code": 404}
+
+            ts = fields.Datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            desc_text = str(description).strip()
+            follow_up_text = f"\nFollow-up ({ts}): {desc_text}\n"
+            existing = (ticket.description or '').strip()
+            new_description = (existing + follow_up_text) if existing else follow_up_text.strip()
+            ticket.write({'description': new_description})
+
+            ticket.message_post(body=f"Follow-up added at {ts}")
+            return {"success": True, "message": "✅ Follow Up updated successfully", "ticket_id": ticket.id}
+        except Exception as e:
+            _logger.error(f"❌ Error updating description: {str(e)}")
+            return {"success": False, "error": str(e), "code": 500}
+
+    @http.route('/api/update_close_comment', type='json', auth='user', methods=['POST'], csrf=False)
+    def api_update_close_comment(self, ticket_id, close_comment, **kwargs):
+        """Update helpdesk.ticket.close_comment using sudo()."""
+        try:
+            if not ticket_id:
+                return {"success": False, "error": "Invalid parameters", "code": 400}
+
+            ticket = request.env['helpdesk.ticket'].sudo().browse(int(ticket_id))
+            if not ticket.exists():
+                return {"success": False, "error": "Ticket not found", "code": 404}
+
+            ticket.write({'close_comment': close_comment or ''})
+            ticket.message_post(body="Resolution updated from mobile.")
+            return {"success": True, "message": "✅ Resolution updated successfully", "ticket_id": ticket.id}
+        except Exception as e:
+            _logger.error(f"❌ Error updating close comment: {str(e)}")
+            return {"success": False, "error": str(e), "code": 500}
+
+    @http.route('/api/update_resolution_tech', type='json', auth='user', methods=['POST'], csrf=False)
+    def api_update_resolution_tech(self, ticket_id, resolution, **kwargs):
+        """Update helpdesk.ticket.resolution_tech using sudo()."""
+        try:
+            if not ticket_id:
+                return {"success": False, "error": "Invalid parameters", "code": 400}
+
+            ticket = request.env['helpdesk.ticket'].sudo().browse(int(ticket_id))
+            if not ticket.exists():
+                return {"success": False, "error": "Ticket not found", "code": 404}
+
+            ticket.write({'resolution_tech': resolution or ''})
+            ticket.message_post(body="Technical resolution updated from mobile.")
+            return {"success": True, "message": "✅ Technical resolution updated successfully", "ticket_id": ticket.id}
+        except Exception as e:
+            _logger.error(f"❌ Error updating resolution: {str(e)}")
+            return {"success": False, "error": str(e), "code": 500}
+
+
+class HelpdeskPmMobileController(http.Controller):
+    """Mobile PM endpoints using sudo() so technicians without maintenance.request ACL can read data."""
+
+    def _pm_request_env(self):
+        return request.env['maintenance.request'].sudo()
+
+    def _pm_env(self):
+        return request.env['preventive.maintenance'].sudo()
+
+    def _serialize_read(self, records):
+        return records
+
+    def _pm_line_is_done(self, stage):
+        s = (stage or '').lower() if isinstance(stage, str) else str(stage or '').lower()
+        return s in ('done', 'complete', 'collected')
+
+    def _pm_kanban_from_preventive_lines(self, status='all'):
+        """Group preventive.maintenance masterlist rows into PM UI project cards."""
+        PM = request.env['preventive.maintenance'].sudo()
+        lines = PM.search_read(
+            [], ['project_id', 'pm_name', 'stage', 'name'],
+            limit=4000, order='project_id, id desc',
+        )
+        by_project = {}
+        for line in lines:
+            project = line.get('project_id')
+            if not project:
+                continue
+            project_id = project[0] if isinstance(project, (list, tuple)) else project
+            if not project_id:
+                continue
+            card = by_project.setdefault(project_id, {
+                'id': 0,
+                'name': 'Preventive Maintenance',
+                'project_id': project,
+                'preventive_maintenance_count_done': 0,
+                'preventive_maintenance_count_new': 0,
+                'preventive_maintenance_done_percentage': 0.0,
+                'days_left_deadline': 30,
+            })
+            if self._pm_line_is_done(line.get('stage')):
+                card['preventive_maintenance_count_done'] += 1
+            else:
+                card['preventive_maintenance_count_new'] += 1
+            pm_name = line.get('pm_name')
+            if pm_name and not card['id']:
+                card['id'] = pm_name[0] if isinstance(pm_name, (list, tuple)) else pm_name
+
+        cards = []
+        for card in by_project.values():
+            done = card['preventive_maintenance_count_done']
+            todo = card['preventive_maintenance_count_new']
+            total = done + todo
+            card['preventive_maintenance_done_percentage'] = (done / total * 100.0) if total else 0.0
+            if status == 'active' and todo <= 0:
+                continue
+            if status == 'complete' and not (todo == 0 and done > 0):
+                continue
+            cards.append(card)
+        return cards
+
+    @http.route('/api/pm/kanban_requests', type='json', auth='user', methods=['POST'], csrf=False)
+    def api_pm_kanban_requests(self, include_all=False, status='all', **kwargs):
+        try:
+            Request = self._pm_request_env()
+            domain = []
+            if not include_all:
+                today = fields.Date.today()
+                domain.append(('deadline', '>=', today))
+            if status == 'active':
+                domain.append(('preventive_maintenance_count_new', '>', 0))
+            elif status == 'complete':
+                domain.extend([
+                    '|',
+                    ('preventive_maintenance_done_percentage', '>=', 100),
+                    '&',
+                    ('preventive_maintenance_count_new', '=', 0),
+                    ('preventive_maintenance_count_done', '>', 0),
+                ])
+            fields_list = [
+                'id', 'name', 'project_id',
+                'preventive_maintenance_count_done',
+                'preventive_maintenance_count_new',
+                'preventive_maintenance_done_percentage',
+                'days_left_deadline', 'deadline',
+            ]
+            limit = 2500 if include_all else 600
+            records = Request.search_read(
+                domain, fields_list, order='deadline asc, id desc', limit=limit,
+            )
+            if not records and not include_all and status == 'all':
+                records = Request.search_read(
+                    [], fields_list, order='deadline desc, id desc', limit=200,
+                )
+
+            if not records:
+                records = self._pm_kanban_from_preventive_lines(status)
+
+            return {'success': True, 'records': self._serialize_read(records)}
+        except KeyError:
+            return {
+                'success': False,
+                'error': 'Preventive Maintenance module/model not installed on server.',
+            }
+        except Exception as e:
+            _logger.error(f"❌ api_pm_kanban_requests: {e}")
+            return {'success': False, 'error': str(e)}
+
+    @http.route('/api/pm/dashboard_rows', type='json', auth='user', methods=['POST'], csrf=False)
+    def api_pm_dashboard_rows(self, **kwargs):
+        try:
+            PM = self._pm_env()
+            fields_list = [
+                'stage', 'technician', 'create_date', 'write_date', 'user_signature_date',
+            ]
+            records = PM.search_read([], fields_list, limit=4000)
+            return {'success': True, 'records': self._serialize_read(records)}
+        except KeyError:
+            return {
+                'success': False,
+                'error': 'Preventive Maintenance module/model not installed on server.',
+            }
+        except Exception as e:
+            _logger.error(f"❌ api_pm_dashboard_rows: {e}")
+            return {'success': False, 'error': str(e)}
+
+    @http.route('/api/pm/collection_cards', type='json', auth='user', methods=['POST'], csrf=False)
+    def api_pm_collection_cards(self, **kwargs):
+        try:
+            Request = self._pm_request_env()
+            fields_list = [
+                'id', 'name', 'project_id', 'cf_name',
+                'project_collection_count_done',
+                'project_collection_count_new',
+                'project_collection_done_percentage',
+            ]
+            records = Request.search_read([], fields_list, order='name', limit=800)
+            return {'success': True, 'records': self._serialize_read(records)}
+        except KeyError:
+            return {
+                'success': False,
+                'error': 'Preventive Maintenance module/model not installed on server.',
+            }
+        except Exception as e:
+            _logger.error(f"❌ api_pm_collection_cards: {e}")
+            return {'success': False, 'error': str(e)}
+
+
 class FCMToken(models.Model):
     _name = 'x_fcm.device.token'
     _description = 'FCM Token'

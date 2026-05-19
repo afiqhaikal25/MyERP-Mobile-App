@@ -55,10 +55,15 @@ class _PMDetailsPageState extends State<PMDetailsPage> {
 
   void _refresh() {
     setState(() {
-      _future = _odoo.fetchPreventiveMaintenanceByRequest(
-        requestId: widget.requestId,
-        stage: _stageFilter,
-      );
+      _future = widget.requestId > 0
+          ? _odoo.fetchPreventiveMaintenanceByRequest(
+              requestId: widget.requestId,
+              stage: _stageFilter,
+            )
+          : _odoo.fetchPreventiveMaintenanceByProject(
+              projectId: widget.projectId,
+              stage: _stageFilter,
+            );
     });
   }
 

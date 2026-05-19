@@ -66,6 +66,8 @@ class ChecklistPage extends StatefulWidget {
   final bool isDarkMode;
   final Ticket ticket;
   final OdooService odooService; // ✅ Tambahkan ini
+  /// True when user checked in via "Check In With Geo" (no location verify).
+  final bool autoResolutionAfterCheckIn;
 
   const ChecklistPage({
     Key? key,
@@ -73,6 +75,7 @@ class ChecklistPage extends StatefulWidget {
     required this.isDarkMode,
     required this.ticket,
     required this.odooService, // ✅ Pastikan ini diberikan dari parent widget
+    this.autoResolutionAfterCheckIn = false,
   }) : super(key: key);
   
 
@@ -106,20 +109,159 @@ void initState() {
     ),
   ];
 
-  _loadDescription(widget.ticket.id);
-  _loadCloseComment(widget.ticket.id);
-  _loadCheckoutStatus();
+  _bootstrapTimeline();
+}
 
-  // ✅ Force update widget.ticket state after loading checkout status
-  Future.delayed(const Duration(milliseconds: 300), () {
-    if (widget.ticket.isCheckedOut != tickets[0].isCheckedOut) {
-      setState(() {
-        widget.ticket.isCheckedOut = tickets[0].isCheckedOut;
-      });
+Future<void> _bootstrapTimeline() async {
+  await _loadDescription(widget.ticket.id);
+  await _loadCloseComment(widget.ticket.id);
+  await _loadCheckoutStatus();
+  await _loadProgressStepsFromOdoo(widget.ticket.id);
+  await _syncAutoFollowUpAfterCheckIn();
+}
+
+String _stripHtml(String input) {
+  return input
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+bool _isTimelineTextStep(String title) {
+  return title == 'Resolution' ||
+      title == 'Follow Up Added' ||
+      title == 'Close Comment';
+}
+
+List<({DateTime time, String text})> _parseFollowUpEntries(String raw) {
+  final clean = _stripHtml(raw);
+  if (clean.isEmpty) return [];
+
+  final regex = RegExp(
+    r'Follow-up\s*\(([^)]+)\):\s*([^\n]+)',
+    multiLine: true,
+    caseSensitive: false,
+  );
+
+  final results = <({DateTime time, String text})>[];
+  for (final match in regex.allMatches(clean)) {
+    final ts = match.group(1)?.trim() ?? '';
+    final text = match.group(2)?.trim() ?? '';
+    if (text.isEmpty) continue;
+
+    DateTime? parsed;
+    for (final pattern in [
+      'yyyy-MM-dd HH:mm:ss',
+      'dd/MM/yyyy HH:mm:ss',
+      'yyyy-MM-dd',
+    ]) {
+      try {
+        parsed = DateFormat(pattern).parse(ts);
+        break;
+      } catch (_) {}
     }
-  });
+    results.add((time: parsed ?? DateTime.now(), text: text));
+  }
+  return results;
+}
 
-  _loadProgressStepsFromOdoo(widget.ticket.id);
+void _insertStepAfterCheckIn(ProgressStep step) {
+  final steps = tickets[0].progressSteps;
+  final checkInIndex =
+      steps.indexWhere((s) => s.title == 'Technician Check In');
+  if (checkInIndex == -1) {
+    steps.add(step);
+    return;
+  }
+
+  int insertAt = checkInIndex + 1;
+  for (int i = checkInIndex + 1; i < steps.length; i++) {
+    final title = steps[i].title;
+    if (title == 'Technician Check Out' || title == 'Ticket Closed') {
+      insertAt = i;
+      break;
+    }
+    if (_isTimelineTextStep(title) || title == 'File Attached') {
+      insertAt = i + 1;
+    }
+  }
+  steps.insert(insertAt, step);
+}
+
+bool _hasTimelineEntry(String title, String text, DateTime? time) {
+  return tickets[0].progressSteps.any((step) {
+    if (step.title != title) return false;
+    final sameText = (step.description ?? '').trim() == text.trim();
+    if (!sameText) return false;
+    if (time == null || step.timestamp == null) return sameText;
+    return step.timestamp!.difference(time).inMinutes.abs() < 2;
+  });
+}
+
+Future<bool> _shouldAutoResolutionAfterCheckIn() async {
+  if (widget.autoResolutionAfterCheckIn) return true;
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool('auto_resolution_after_checkin_${widget.ticket.id}') ??
+      false;
+}
+
+Future<void> _syncAutoFollowUpAfterCheckIn() async {
+  final checkInIndex = tickets[0].progressSteps
+      .indexWhere((s) => s.title == 'Technician Check In');
+  if (checkInIndex == -1) return;
+
+  final autoResolution = await _shouldAutoResolutionAfterCheckIn();
+  if (!autoResolution) return;
+
+  final ticketData =
+      await widget.odooService.getTicketDetails(widget.ticket.id);
+  if (ticketData == null || !mounted) return;
+
+  final checkInStep = tickets[0].progressSteps[checkInIndex];
+  final checkInTime =
+      checkInStep.timestamp ?? widget.ticket.checkInTime ?? DateTime.now();
+
+  bool changed = false;
+
+  // Auto resolution from ticket problem (e.g. "Provide new microwave").
+  final probName = _stripHtml(ticketData['prob_name']?.toString() ?? '');
+  if (probName.isNotEmpty) {
+    tickets[0].progressSteps.removeWhere((s) => s.title == 'Resolution');
+    if (!_hasTimelineEntry('Resolution', probName, checkInTime)) {
+      _insertStepAfterCheckIn(
+        ProgressStep(
+          title: 'Resolution',
+          timestamp: checkInTime.add(const Duration(minutes: 1)),
+          isCompleted: true,
+          icon: Icons.build_circle_outlined,
+          description: probName,
+          resolution: probName,
+        ),
+      );
+      changed = true;
+    }
+  }
+
+  if (changed && mounted) {
+    setState(() {
+      widget.ticket.progressSteps = List.from(tickets[0].progressSteps);
+    });
+    await _updateTicketProgress();
+  }
+
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove('auto_resolution_after_checkin_${widget.ticket.id}');
+}
+
+String _formatResolutionTimelineTime(DateTime ts) {
+  final period = ts.hour >= 12 ? 'PM' : 'AM';
+  return '${DateFormat('HH.mm').format(ts)} $period';
 }
 
 IconData getIconByName(String? name) {
@@ -134,6 +276,8 @@ IconData getIconByName(String? name) {
       return Icons.comment;
     case 'attach_file':
       return Icons.attach_file;
+    case 'resolution':
+      return Icons.build_circle_outlined;
     default:
       return Icons.help_outline;
   }
@@ -145,6 +289,7 @@ String _iconName(IconData? icon) {
   if (icon == Icons.description) return 'description';
   if (icon == Icons.comment) return 'comment';
   if (icon == Icons.attach_file) return 'attach_file';
+  if (icon == Icons.build_circle_outlined) return 'resolution';
   return 'help_outline';
 }
 
@@ -161,13 +306,14 @@ Future<void> _loadCloseComment(int ticketId) async {
   if (savedComment != null && savedComment.isNotEmpty && !alreadyExists) {
     setState(() {
       widget.ticket.closeComment = savedComment;
-      tickets[0].progressSteps.add(
+      _insertStepAfterCheckIn(
         ProgressStep(
           title: "Resolution",
           timestamp: DateTime.now(),
           isCompleted: true,
-          icon: Icons.comment,
+          icon: Icons.build_circle_outlined,
           description: savedComment,
+          resolution: savedComment,
         ),
       );
     });
@@ -191,13 +337,14 @@ Future<void> _loadCloseComment(int ticketId) async {
       if (fetchedComment.isNotEmpty && !alreadyExists) {
         setState(() {
           widget.ticket.closeComment = fetchedComment;
-          tickets[0].progressSteps.add(
+          _insertStepAfterCheckIn(
             ProgressStep(
-              title: "Close Comment",
+              title: "Resolution",
               timestamp: DateTime.now(),
               isCompleted: true,
-              icon: Icons.comment,
+              icon: Icons.build_circle_outlined,
               description: fetchedComment,
+              resolution: fetchedComment,
             ),
           );
         });
@@ -360,7 +507,7 @@ Future<void> _saveCloseComment(int ticketId) async {
 }
  
   // Load checkout status from SharedPreferences
-void _loadCheckoutStatus() async {
+Future<void> _loadCheckoutStatus() async {
   SharedPreferences prefs = await SharedPreferences.getInstance();
   bool? checkedOut = prefs.getBool('isCheckedOut_${widget.ticket.id}');
   String? checkOutTime = prefs.getString('checkOutTime_${widget.ticket.id}');
@@ -437,11 +584,10 @@ Future<void> _loadDescription(int ticketId) async {
     setState(() {
       widget.ticket.description = clean;
 
-      // ❌ Remove existing follow up step first to prevent duplication
-      tickets[0].progressSteps.removeWhere((step) => step.title == "Follow Up Added");
+      tickets[0].progressSteps
+          .removeWhere((step) => step.title == "Follow Up Added");
 
-      // ✅ Add new updated follow up step
-      tickets[0].progressSteps.add(
+      _insertStepAfterCheckIn(
         ProgressStep(
           title: "Follow Up Added",
           timestamp: DateTime.now(),
@@ -462,59 +608,62 @@ Future<void> _loadDescription(int ticketId) async {
 
 @override
 Widget build(BuildContext context) {
-  return Scaffold(
-    backgroundColor: widget.isDarkMode ? Colors.black : const Color(0xFFE8E6F3),
-    appBar: AppBar(
-    elevation: 0,
-   backgroundColor: widget.isDarkMode ? Colors.grey[900] : const Color(0xFF282454),
-  centerTitle: true,
-  title: Text(
-    'Ticket ID: ${widget.ticket.id}', // Menggunakan widget.ticket.id dengan betul
-    style: const TextStyle(
-      fontSize: 20,
-      fontWeight: FontWeight.bold,
-      color: Colors.white,
-      letterSpacing: 0.5,
-    ),
-  ),
-    leading: IconButton(
-    icon: const Icon(Icons.arrow_back, color: Colors.white), // 🟢 Sentiasa warna putih
-    onPressed: () => Navigator.pop(context),
-    ),
-),
+  final topBarForeground =
+      widget.isDarkMode ? Colors.black87 : const Color(0xFF282454);
 
-    body: Stack(
-      children: [
-        Positioned.fill(
-          child: Image.asset(
-            widget.isDarkMode ? 'images/woodb.png' : 'images/wood.png',
-            fit: BoxFit.cover,
-          ),
-        ),
-        Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  ...tickets.map((ticket) => _buildTicketProgressCard(ticket)).toList(),
-                  const SizedBox(height: 16),
-                  // Only show the checkout button if the ticket is not checked out
-                  if (!tickets[0].isCheckedOut) ...[
-                    _buildCheckoutButton(tickets[0].id),
-                    const SizedBox(height: 8),
-                  ],
-                  // Show close ticket button if the ticket is checked out but not closed
-                  if (tickets[0].isCheckedOut && !_isTicketClosed() && !(tickets[0].stageName?.toLowerCase().contains('closed') ?? false)) ...[
-                    _buildCloseTicketButton(tickets[0].id),
-                    const SizedBox(height: 8),
-                  ],
-                ],
-              ),
+  return Scaffold(
+    backgroundColor: Colors.white,
+    body: SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: topBarForeground),
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.pop(context),
+                ),
+                Expanded(
+                  child: Text(
+                    'Ticket ID: ${widget.ticket.id}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                      color: topBarForeground,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 48),
+              ],
             ),
-          ],
-        ),
-      ],
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              children: [
+                ...tickets.map((ticket) => _buildTicketProgressCard(ticket)).toList(),
+                const SizedBox(height: 16),
+                if (!tickets[0].isCheckedOut) ...[
+                  _buildCheckoutButton(tickets[0].id),
+                  const SizedBox(height: 8),
+                ],
+                if (tickets[0].isCheckedOut &&
+                    !_isTicketClosed() &&
+                    !(tickets[0].stageName?.toLowerCase().contains('closed') ??
+                        false)) ...[
+                  _buildCloseTicketButton(tickets[0].id),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -968,10 +1117,127 @@ String _getMimeType(String extension) {
   return mimeTypes[extension.toLowerCase()] ?? "application/octet-stream";
 }
 
+Widget _buildResolutionTimelineStep(
+  ProgressStep step,
+  Ticket ticket,
+  Color textColor,
+  Color? subTextColor,
+) {
+  final ts = step.timestamp ?? DateTime.now();
+  final formattedDate = DateFormat('dd/MM/yyyy').format(ts);
+  final formattedTime = _formatResolutionTimelineTime(ts);
+  final label = step.title == 'Follow Up Added' ? 'Follow Up' : 'Resolution';
+  final body = (step.resolution ?? step.description ?? '').trim();
+
+  return IntrinsicHeight(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                formattedDate,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                formattedTime,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: subTextColor,
+                ),
+              ),
+              if (step.title == 'Follow Up Added' || step.title == 'Resolution')
+                TextButton.icon(
+                  onPressed: () => _showEditDialog(ticket, step),
+                  icon: Icon(Icons.edit, size: 16, color: subTextColor),
+                  label: Text(
+                    'Edit',
+                    style: TextStyle(fontSize: 12, color: subTextColor),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        SizedBox(
+          width: 40,
+          child: Column(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF19543E),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: Icon(
+                  step.icon ?? Icons.build_circle_outlined,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+              if (step != ticket.progressSteps.last)
+                Container(
+                  width: 2,
+                  height: 48,
+                  color: Colors.grey[300],
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 3,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: textColor,
+                ),
+              ),
+              if (body.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'data resolution - $body',
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.35,
+                    color: subTextColor,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
 Widget _buildProgressStep(ProgressStep step, Ticket ticket, Color textColor, Color? subTextColor) {
   debugPrint("🛠️ Step Title: ${step.title}");
   debugPrint("🛠️ Attached Files Count: ${step.attachedFiles?.length ?? 0}");
+
+  if (_isTimelineTextStep(step.title)) {
+    return _buildResolutionTimelineStep(step, ticket, textColor, subTextColor);
+  }
+
   String formattedDate = DateFormat('dd/MM/yyyy').format(step.timestamp!);
   String formattedTime = DateFormat('HH:mm a').format(step.timestamp!);
 
@@ -1443,6 +1709,7 @@ Future<void> _loadProgressStepsFromOdoo(int ticketId) async {
             widget.ticket.progressSteps.add(step);
           }
         }
+        tickets[0].progressSteps = List.from(widget.ticket.progressSteps);
       });
     }
   } catch (e) {

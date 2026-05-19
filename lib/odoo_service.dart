@@ -10,6 +10,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
 
+class OdooActionResult {
+  final int? id;
+  final String? error;
+  const OdooActionResult({this.id, this.error});
+}
+
 class OdooService {
   final String baseUrl = 'https://myerp.com.my';
   final String jsonRpcUrl = 'https://myerp.com.my/jsonrpc';
@@ -17,6 +23,69 @@ class OdooService {
   String? _password;
   String? _userId;
   String? lastErrorMessage;
+
+  /// Odoo `/api/update_check_in` and `/api/update_check_out` expect `yyyy-MM-dd HH:mm:ss`.
+  static String formatOdooApiDateTime(DateTime dateTime) {
+    return DateFormat('yyyy-MM-dd HH:mm:ss').format(dateTime);
+  }
+
+  static String normalizeOdooApiDateTimeString(String value) {
+    const patterns = [
+      'yyyy-MM-dd HH:mm:ss',
+      'dd/MM/yyyy HH:mm:ss',
+      'yyyy-MM-dd',
+      'dd/MM/yyyy',
+    ];
+    for (final pattern in patterns) {
+      try {
+        final parsed = DateFormat(pattern).parse(value.trim());
+        return formatOdooApiDateTime(parsed);
+      } catch (_) {}
+    }
+    return value.trim();
+  }
+
+  bool _isJsonRpcSuccess(dynamic result) {
+    if (result is Map) {
+      if (result.containsKey('error')) return false;
+      if (result['success'] == true) return true;
+      final nested = result['result'];
+      if (nested is Map) {
+        if (nested.containsKey('error')) return false;
+        if (nested['success'] == true) return true;
+      }
+    }
+    return false;
+  }
+
+  String? _extractJsonRpcErrorMessage(dynamic payload) {
+    if (payload is! Map) return null;
+    final direct = payload['error'];
+    if (direct is Map && direct['message'] != null) {
+      return direct['message'].toString();
+    }
+    final result = payload['result'];
+    if (result is Map) {
+      final nested = result['error'];
+      if (nested is Map && nested['message'] != null) {
+        return nested['message'].toString();
+      }
+    }
+    return null;
+  }
+
+  bool _isHttpNotFound(dynamic payload, {int? statusCode}) {
+    if (statusCode == 404) return true;
+    if (payload is! Map) return false;
+    final error = payload['error'];
+    if (error is Map) {
+      final code = error['code'];
+      if (code == 404 || code == '404') return true;
+      final message = error['message']?.toString() ?? '';
+      if (message.contains('404') || message.contains('Not Found')) return true;
+    }
+    return false;
+  }
 
   String _sanitizePlainText(String input) {
     // Remove HTML tags + normalize common entities so only real text is stored/sent.
@@ -39,12 +108,34 @@ class OdooService {
   get checkOutTime => null;
   
 
-  Future<bool> checkAndLoadUserCredentials() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    String? password = prefs.getString('user_password');
+  /// Hydrate in-memory credentials from SharedPreferences (fast path after app restart).
+  Future<void> loadSessionCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    _userId = prefs.getString('user_id') ?? _userId;
+    _password = prefs.getString('user_password') ??
+        prefs.getString('password') ??
+        _password;
+  }
 
-    if (email != null && password != null) {
+  Future<bool> checkAndLoadUserCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('user_email') ?? prefs.getString('email');
+    final password =
+        prefs.getString('user_password') ?? prefs.getString('password');
+    final userId = prefs.getString('user_id');
+    final sessionId =
+        prefs.getString('session_id') ?? prefs.getString('sessionId');
+
+    if (userId != null &&
+        password != null &&
+        password.isNotEmpty &&
+        (sessionId != null && sessionId.isNotEmpty)) {
+      _userId = userId;
+      _password = password;
+      return true;
+    }
+
+    if (email != null && password != null && password.isNotEmpty) {
       return await authenticate(email, password) != null;
     }
     return false;
@@ -124,6 +215,8 @@ class OdooService {
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setString('user_email', email);
           await prefs.setString('user_password', password);
+          await prefs.setString('email', email);
+          await prefs.setString('password', password);
           await prefs.setString('user_id', _userId!); // <-- Ensure user_id is always saved
 
           // Fetch and save user image after login
@@ -143,8 +236,12 @@ class OdooService {
           try {
             String? fcmToken = await FirebaseMessaging.instance.getToken();
             if (fcmToken != null && fcmToken.isNotEmpty) {
-              await sendFcmToken(fcmToken);
-              print('✅ FCM token sent to Odoo after login.');
+              final sent = await sendFcmToken(fcmToken);
+              if (sent) {
+                print('✅ FCM token sent to Odoo after login.');
+              } else {
+                print('❌ FCM token was not stored by Odoo after login.');
+              }
             } else {
               print('❌ FCM token not available after login.');
             }
@@ -177,10 +274,11 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
     return false;
   }
 
-  try {
-    print("🔹 Submitting Check-Out: Ticket ID: $ticketId, Check-Out Time: $checkOutString");
+    try {
+      final apiTime = normalizeOdooApiDateTimeString(checkOutString);
+      print("🔹 Submitting Check-Out: Ticket ID: $ticketId, Check-Out Time: $apiTime");
 
-    final prefs = await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance();
     final String? sessionCookie = prefs.getString('session_id');
 
     if (sessionCookie == null) {
@@ -199,7 +297,7 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
         'method': 'call',
         'params': {
           'ticket_id': ticketId,
-          'check_out_time': checkOutString,
+          'check_out_time': apiTime,
         },
         'id': 1,
       }),
@@ -213,23 +311,14 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
     }
 
     final responseData = json.decode(response.body);
-    if (responseData.containsKey('error')) {
+    final errorMessage = _extractJsonRpcErrorMessage(responseData);
+    if (errorMessage != null) {
+      lastErrorMessage = errorMessage;
       print("❌ Check-Out submission failed. Response: ${response.body}");
       return false;
     }
 
-    final result = responseData['result'];
-    bool success = false;
-    if (result is Map) {
-      if (result['success'] == true) {
-        success = true;
-      } else if (result['result'] is Map && (result['result'] as Map)['success'] == true) {
-        // Handle older double-wrapped server responses
-        success = true;
-      }
-    }
-
-    if (success) {
+    if (_isJsonRpcSuccess(responseData['result'])) {
       print("✅ Check-Out submitted successfully.");
       return true;
     }
@@ -404,7 +493,8 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
     }
 
     try {
-      print("🔹 Submitting Check-In: Ticket ID: $ticketId, Check-In Time: $checkInString");
+      final apiTime = normalizeOdooApiDateTimeString(checkInString);
+      print("🔹 Submitting Check-In: Ticket ID: $ticketId, Check-In Time: $apiTime");
 
       // Use custom API endpoint /api/update_check_in instead of direct write
       // This endpoint uses sudo().write() which bypasses permission checks
@@ -428,7 +518,7 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
           'method': 'call',
           'params': {
             'ticket_id': ticketId,
-            'check_in_time': checkInString,
+            'check_in_time': apiTime,
           },
           'id': 1,
         }),
@@ -439,40 +529,20 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
-        // Check for JSON-RPC error
-        if (responseData.containsKey('error')) {
+        final errorMessage = _extractJsonRpcErrorMessage(responseData);
+        if (errorMessage != null) {
+          lastErrorMessage = errorMessage;
           print("❌ Check-In submission failed. Response: ${response.body}");
           return false;
         }
 
-        // Check for success in result (JSON-RPC format)
-        if (responseData.containsKey('result')) {
-          final result = responseData['result'];
-
-          // Odoo `type='json'` controllers get automatically wrapped as:
-          // {jsonrpc, id, result: <controller_return>}
-          // Your controller currently returns another JSON-RPC-like object, so we may see:
-          // result: { jsonrpc, result: { success: true, ... } }
-          bool success = false;
-          if (result is Map) {
-            if (result['success'] == true) {
-              success = true;
-            } else if (result['result'] is Map && (result['result'] as Map)['success'] == true) {
-              success = true;
-            }
-          }
-
-          if (success) {
-            print("✅ Check-In submitted successfully.");
-            return true;
-          }
-
-          print("❌ Check-In submission failed. Response: ${response.body}");
-          return false;
-        } else {
-          print("❌ Check-In submission failed. Response: ${response.body}");
-          return false;
+        if (_isJsonRpcSuccess(responseData['result'])) {
+          print("✅ Check-In submitted successfully.");
+          return true;
         }
+
+        print("❌ Check-In submission failed. Response: ${response.body}");
+        return false;
       } else {
         print("❌ Check-In submission failed. Status Code: ${response.statusCode}, Response: ${response.body}");
         return false;
@@ -810,11 +880,18 @@ Future<bool> submitDescription(int ticketId, String description) async {
     final clean = _sanitizePlainText(description);
     if (clean.isEmpty) return false;
 
+    final prefs = await SharedPreferences.getInstance();
+    final String? sessionCookie = prefs.getString('session_id');
+    if (sessionCookie == null || sessionCookie.isEmpty) {
+      lastErrorMessage = 'Session expired. Please login again.';
+      return false;
+    }
+
     final response = await http.post(
       Uri.parse('$baseUrl/api/update_description'),
       headers: {
         'Content-Type': 'application/json',
-        'Cookie': await getSessionId(),
+        'Cookie': sessionCookie,
       },
       body: jsonEncode({
         "jsonrpc": "2.0",
@@ -829,16 +906,143 @@ Future<bool> submitDescription(int ticketId, String description) async {
 
     print("🔹 Update Description Response: ${response.body}");
 
-    if (response.statusCode != 200) return false;
-    final responseData = json.decode(response.body);
-    if (responseData['error'] != null) return false;
+    if (response.statusCode == 200) {
+      final responseData = json.decode(response.body);
+      if (_isHttpNotFound(responseData)) {
+        print("🔁 /api/update_description not found — falling back to JSON-RPC");
+        return await _submitDescriptionViaRpc(ticketId, clean);
+      }
 
-    final result = responseData['result'];
-    if (result is Map && result['success'] == true) return true;
-    if (result is Map && result['result'] is Map && (result['result'] as Map)['success'] == true) return true;
+      final errorMessage = _extractJsonRpcErrorMessage(responseData);
+      if (errorMessage != null) {
+        lastErrorMessage = errorMessage;
+        return false;
+      }
+
+      if (_isJsonRpcSuccess(responseData['result'])) {
+        lastErrorMessage = null;
+        return true;
+      }
+    }
+
+    if (response.statusCode == 404) {
+      print("🔁 /api/update_description returned 404 — falling back to JSON-RPC");
+      return await _submitDescriptionViaRpc(ticketId, clean);
+    }
+
+    lastErrorMessage = 'Failed to update description (HTTP ${response.statusCode}).';
     return false;
   } catch (e) {
     print("❌ Error updating description: $e");
+    lastErrorMessage = 'Error updating description: $e';
+    return false;
+  }
+}
+
+Future<bool> _submitDescriptionViaRpc(int ticketId, String clean) async {
+  if (!await checkAndLoadUserCredentials() || _userId == null || _password == null) {
+    lastErrorMessage = 'Not authenticated. Please login again.';
+    return false;
+  }
+
+  try {
+    final ts = formatOdooApiDateTime(DateTime.now());
+    final followUpText = '\nFollow-up ($ts): $clean\n';
+
+    final readResponse = await http.post(
+      Uri.parse(jsonRpcUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+          "service": "object",
+          "method": "execute_kw",
+          "args": [
+            database,
+            int.parse(_userId!),
+            _password,
+            "helpdesk.ticket",
+            "search_read",
+            [
+              [ticketId]
+            ],
+            {"fields": ["description"]},
+          ],
+        },
+        "id": 71,
+      }),
+    );
+
+    if (readResponse.statusCode != 200) {
+      lastErrorMessage = 'Failed to read ticket description (HTTP ${readResponse.statusCode}).';
+      return false;
+    }
+
+    final readData = jsonDecode(readResponse.body);
+    if (readData is Map && readData['error'] != null) {
+      lastErrorMessage = readData['error']['message']?.toString() ?? 'Failed to read ticket.';
+      return false;
+    }
+
+    String existing = '';
+    final rows = readData['result'];
+    if (rows is List && rows.isNotEmpty && rows[0] is Map) {
+      existing = _sanitizePlainText(rows[0]['description']?.toString() ?? '');
+    }
+
+    final newDescription = existing.trim().isEmpty
+        ? followUpText.trim()
+        : '${existing.trim()}$followUpText';
+
+    final writeResponse = await http.post(
+      Uri.parse(jsonRpcUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+          "service": "object",
+          "method": "execute_kw",
+          "args": [
+            database,
+            int.parse(_userId!),
+            _password,
+            "helpdesk.ticket",
+            "write",
+            [
+              [ticketId],
+              {"description": newDescription},
+            ],
+          ],
+        },
+        "id": 72,
+      }),
+    );
+
+    print("🔹 Update Description (RPC) Response: ${writeResponse.body}");
+
+    if (writeResponse.statusCode != 200) {
+      lastErrorMessage = 'Failed to update description (HTTP ${writeResponse.statusCode}).';
+      return false;
+    }
+
+    final writeData = jsonDecode(writeResponse.body);
+    if (writeData is Map && writeData['error'] != null) {
+      lastErrorMessage = writeData['error']['message']?.toString() ?? 'Failed to update description.';
+      return false;
+    }
+
+    if (writeData['result'] == true) {
+      lastErrorMessage = null;
+      return true;
+    }
+
+    lastErrorMessage = 'Failed to update description.';
+    return false;
+  } catch (e) {
+    print("❌ Error updating description via RPC: $e");
+    lastErrorMessage = 'Error updating description: $e';
     return false;
   }
 }
@@ -1589,28 +1793,63 @@ Future<bool> submitFeedbackToOdoo({
 Future<String?> fetchUserImage() async {
   try {
     final prefs = await SharedPreferences.getInstance();
-    final odooUrl = prefs.getString('odooUrl') ?? 'https://myerp.com.my';
-    final sessionId = prefs.getString('sessionId') ?? '';
-    final userId = prefs.getString('user_id') ?? '';
+    final userIdStr = prefs.getString('user_id') ?? _userId ?? '';
+    final pwd = prefs.getString('user_password') ?? _password;
+    if (userIdStr.isEmpty || pwd == null || pwd.isEmpty) {
+      return null;
+    }
+    final uid = int.tryParse(userIdStr);
+    if (uid == null) return null;
 
     final response = await http.post(
-      Uri.parse('$odooUrl/api/user/image'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': 'session_id=$sessionId',
-      },
-      body: jsonEncode({'user_id': userId}),
+      Uri.parse(jsonRpcUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'jsonrpc': '2.0',
+        'method': 'call',
+        'params': {
+          'service': 'object',
+          'method': 'execute_kw',
+          'args': [
+            database,
+            uid,
+            pwd,
+            'res.users',
+            'read',
+            [
+              [uid]
+            ],
+            ['image_128'],
+          ],
+        },
+        'id': 1,
+      }),
     );
-    print('User image response: ${response.statusCode} ${response.body}');
+
+    if (response.statusCode != 200) {
+      debugPrint(
+          'User image: HTTP ${response.statusCode} (no avatar cached).');
+      return null;
+    }
     final data = jsonDecode(response.body);
-    final result = data['result'] ?? {};
-    if (result['success'] == true && result['image_base64'] != null) {
-      return result['image_base64'];
+    if (data['error'] != null) {
+      debugPrint('User image: Odoo RPC error (no avatar cached).');
+      return null;
+    }
+    final result = data['result'];
+    if (result is List && result.isNotEmpty) {
+      final row = result[0];
+      if (row is Map<String, dynamic>) {
+        final img = row['image_128'];
+        if (img is String && img.isNotEmpty) {
+          return img;
+        }
+      }
     }
   } catch (e) {
-    print("❌ Error fetching user image: $e");
+    debugPrint('User image fetch failed: $e');
   }
-  return '';
+  return null;
 }
 
 Future<List<dynamic>> fetchAllTicketsForAdmin(String db, int uid, String password) async {
@@ -1689,12 +1928,15 @@ Future<List<dynamic>> fetchAllTicketsForAdmin(String db, int uid, String passwor
 
 Future<bool> isAdmin() async {
   try {
-    debugPrint("🔍 Checking admin status for user ID: $_userId");
-
+    await loadSessionCredentials();
     if (_userId == null || _password == null) {
-      debugPrint("❌ User ID or password is null");
-      return false;
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok) {
+        debugPrint("❌ User ID or password is null");
+        return false;
+      }
     }
+    debugPrint("🔍 Checking admin status for user ID: $_userId");
 
     final url = Uri.parse(jsonRpcUrl);
     final payload = {
@@ -1768,61 +2010,66 @@ Future<bool> sendFcmToken(String token) async {
   }
 
   try {
-    // Use JSON-RPC format for /store_fcm_token endpoint
     final prefs = await SharedPreferences.getInstance();
     final String? sessionCookie = prefs.getString('session_id');
-    
-    if (sessionCookie == null) {
-      print("❌ Session cookie not found. User needs to re-authenticate.");
+    final uid = int.tryParse(_userId!);
+
+    if (sessionCookie == null || uid == null) {
+      print("❌ Session or user id missing. Cannot send FCM token.");
       return false;
     }
 
+    // Odoo `helpdesk_ticket.store_fcm_token_api` reads `request.jsonrequest`
+    // for `user_id` and `token` — POST to /api/fcm/token, not /jsonrpc.
     final response = await http.post(
-      Uri.parse(jsonRpcUrl),
+      Uri.parse('$baseUrl/api/fcm/token'),
       headers: {
         'Content-Type': 'application/json',
         'Cookie': sessionCookie,
       },
       body: jsonEncode({
-        "jsonrpc": "2.0",
-        "method": "call",
-        "params": {
-          "token": token,
+        'jsonrpc': '2.0',
+        'method': 'call',
+        'params': {
+          'user_id': uid,
+          'token': token,
         },
-        "id": 1,
+        'id': 1,
       }),
     );
 
     if (response.statusCode == 200) {
       final responseData = json.decode(response.body);
-      
-      // Handle potential JSON-RPC error wrapper from Odoo on failure
+
       if (responseData.containsKey('error')) {
         final error = responseData['error'];
-        print("❌ Failed to send FCM Token: ${error['data']?['message'] ?? error['message']}");
+        print(
+            "❌ Failed to send FCM Token: ${error['data']?['message'] ?? error['message']}");
         return false;
       }
 
-      // Check for success in result (JSON-RPC format)
-      if (responseData.containsKey('result')) {
-        final result = responseData['result'];
-        if (result is Map && result['success'] == true) {
-          print("✅ FCM token sent successfully.");
-          return true;
-        } else {
-          print("❌ Failed to send FCM Token: ${result['error'] ?? 'Unknown server error'}");
-          return false;
+      bool rpcSuccess(dynamic node, [int depth = 0]) {
+        if (depth > 6 || node == null) return false;
+        if (node is Map) {
+          if (node['success'] == true) return true;
+          if (node['error'] != null) return false;
+          for (final v in node.values) {
+            if (rpcSuccess(v, depth + 1)) return true;
+          }
         }
-      } else if (responseData['success'] == true) {
-        // Fallback for non-JSON-RPC response
-        print("✅ FCM token sent successfully.");
-        return true;
-      } else {
-        print("❌ Failed to send FCM Token: ${responseData['error'] ?? 'Unknown server error'}");
         return false;
       }
+
+      if (rpcSuccess(responseData)) {
+        print("✅ FCM token sent successfully.");
+        return true;
+      }
+
+      print("❌ Failed to send FCM Token: ${responseData['result'] ?? responseData}");
+      return false;
     } else {
-      print("❌ Error sending FCM token. Status Code: ${response.statusCode}, Response: ${response.body}");
+      print(
+          "❌ Error sending FCM token. Status Code: ${response.statusCode}, Response: ${response.body}");
       return false;
     }
   } catch (e) {
@@ -3639,7 +3886,7 @@ Note: These changes require administrator privileges in Odoo.
 
   Future<List<Project>> fetchProjects() async {
     print("🔍 Fetching projects...");
-    
+
     if (_userId == null || _password == null) {
       print("❌ User not authenticated. Cannot fetch projects.");
       return [];
@@ -3661,31 +3908,26 @@ Note: These changes require administrator privileges in Odoo.
               _password,
               "project.project",
               "search_read",
-              [
-                [
-                  ["user_id", "=", int.parse(_userId!)]
-                ]
-              ],
+              [],
               {
                 "fields": [
                   "id",
-                  "name", 
+                  "name",
                   "description",
                   "partner_id",
                   "partner_email",
                   "partner_phone",
                   "date_start",
                   "date",
-                  "duration",
-                  "warranty",
                   "task_count",
-                  "stage_id",
                   "color",
                   "is_favorite",
-                  "user_id"
+                  "user_id",
+                  "last_update_status",
                 ],
-                "order": "name asc"
-              }
+                "order": "name asc",
+                "limit": 100,
+              },
             ]
           },
           "id": 1
@@ -3694,19 +3936,26 @@ Note: These changes require administrator privileges in Odoo.
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data['result'] != null) {
-          print("✅ Projects fetched successfully: ${data['result'].length} projects");
-          return (data['result'] as List)
-              .map((project) => Project.fromJson(project))
-              .toList();
-        } else {
-          print("❌ No projects found in response");
+        if (data['error'] != null) {
+          final err = data['error'];
+          final msg = err['data']?['message'] ?? err['message'] ?? err.toString();
+          print("❌ fetchProjects Odoo error: $msg");
+          lastErrorMessage = msg.toString();
           return [];
         }
-      } else {
-        print("❌ Error fetching projects: ${response.statusCode}");
+        if (data['result'] != null) {
+          final list = data['result'] as List;
+          print("✅ Projects fetched successfully: ${list.length} projects");
+          lastErrorMessage = null;
+          return list
+              .map((e) => Project.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        }
+        print("❌ No projects found in response");
         return [];
       }
+      print("❌ Error fetching projects: ${response.statusCode}");
+      return [];
     } catch (e) {
       print("❌ Exception fetching projects: $e");
       return [];
@@ -3981,6 +4230,3218 @@ Note: These changes require administrator privileges in Odoo.
     
     return [];
   }
+
+  // ---------------------------------------------------------------------------
+  // Preventive maintenance / PM module (Odoo custom models — adjust if needed)
+  // ---------------------------------------------------------------------------
+  static const String _odooPmModel = 'preventive.maintenance';
+  static const String _odooPmRequestModel = 'maintenance.request';
+  static const String _odooPmTaskModel = 'preventive.maintenance.task';
+  static const String _odooPmTaskModelAlt = 'preventive.maintenance.line';
+
+  static const List<String> _pmFormFields = [
+    'id',
+    'name',
+    'project_id',
+    'zone_id',
+    'lot_location',
+    'lot_serial_number',
+    'serial_number_id',
+    'lot_product',
+    'equipment_type',
+    'equipment_user',
+    'lot_department',
+    'lot_ip_address',
+    'lot_user_mail',
+    'lot_user_no',
+    'rack_no',
+    'technician',
+    'user_signature',
+    'user_signature_date',
+    'representative_name',
+    'pic_sign',
+    'pic_sign_date',
+    'pic_name',
+    'qr_code_user',
+    'qr_code_pic',
+    'stage',
+    'remarks',
+    'pm_name',
+  ];
+
+  Future<Map<String, String>> _prefsAuth() async {
+    await loadSessionCredentials();
+    final prefs = await SharedPreferences.getInstance();
+    final uidStr = _userId ?? prefs.getString('user_id');
+    final pwd = _password ??
+        prefs.getString('user_password') ??
+        prefs.getString('password');
+    if (uidStr != null && pwd != null && pwd.isNotEmpty) {
+      _userId = uidStr;
+      _password = pwd;
+      return {'uid': uidStr, 'pwd': pwd};
+    }
+    final email = prefs.getString('user_email') ?? prefs.getString('email');
+    if (email != null && pwd != null && pwd.isNotEmpty) {
+      final uid = await authenticate(email, pwd);
+      if (uid != null) return {'uid': uid, 'pwd': pwd};
+    }
+    throw Exception('User not authenticated. Please login again.');
+  }
+
+  String _friendlyOdooError(dynamic error) {
+    String raw = error.toString();
+    if (error is Map) {
+      final data = error['data'];
+      if (data is Map && data['message'] != null) {
+        raw = data['message'].toString();
+      } else if (error['message'] != null) {
+        raw = error['message'].toString();
+      }
+    }
+    if (raw.contains('maintenance.request') &&
+        (raw.contains('AccessError') ||
+            raw.contains('not allowed to access'))) {
+      return 'Your account cannot access Preventive Maintenance. '
+          'Ask your Odoo admin to add you to a PM group '
+          '(Technician / PM Manager / APMM / MKN / PKNS User).';
+    }
+    return raw;
+  }
+
+  Future<dynamic> _executeKwRaw(List<dynamic> args) async {
+    final response = await http.post(
+      Uri.parse(jsonRpcUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'jsonrpc': '2.0',
+        'method': 'call',
+        'params': {
+          'service': 'object',
+          'method': 'execute_kw',
+          'args': args,
+        },
+        'id': 1,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('HTTP ${response.statusCode}: ${response.body}');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['error'] != null) {
+      lastErrorMessage = _friendlyOdooError(decoded['error']);
+      throw Exception(lastErrorMessage!);
+    }
+    return decoded['result'];
+  }
+
+  Future<Map<String, dynamic>?> _pmMobileApiCall(
+    String path,
+    Map<String, dynamic> params,
+  ) async {
+    final cookie = await _sessionCookieHeader();
+    if (cookie == null || cookie.isEmpty) return null;
+
+    final response = await http.post(
+      Uri.parse('$baseUrl$path'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookie,
+      },
+      body: jsonEncode({
+        'jsonrpc': '2.0',
+        'method': 'call',
+        'params': params,
+        'id': 1,
+      }),
+    );
+
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) {
+      throw Exception('HTTP ${response.statusCode}: ${response.body}');
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) return null;
+
+    final errorMessage = _extractJsonRpcErrorMessage(decoded);
+    if (errorMessage != null) {
+      lastErrorMessage = errorMessage;
+      throw Exception(errorMessage);
+    }
+
+    final result = decoded['result'];
+    if (result is Map<String, dynamic>) {
+      if (result['success'] == true) return result;
+      if (result['error'] != null) {
+        lastErrorMessage = result['error'].toString();
+        throw Exception(lastErrorMessage!);
+      }
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _pmRowsFromApiResult(Map<String, dynamic>? api) {
+    if (api == null) return [];
+    final records = api['records'];
+    if (records is! List) return [];
+    return records
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  int _pmM2oId(dynamic v) {
+    if (v is List && v.isNotEmpty) {
+      final id = v[0];
+      if (id is int) return id;
+      return int.tryParse(id?.toString() ?? '') ?? 0;
+    }
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  bool _isPmLineDone(dynamic stage) {
+    final s = (stage ?? '').toString().toLowerCase();
+    return s == 'done' || s == 'complete' || s == 'collected';
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPmKanbanViaRpc({
+    required bool includeAll,
+    required String status,
+  }) async {
+    const fields = [
+      'id',
+      'name',
+      'project_id',
+      'preventive_maintenance_count_done',
+      'preventive_maintenance_count_new',
+      'preventive_maintenance_done_percentage',
+      'days_left_deadline',
+    ];
+
+    final List<dynamic> domain = [];
+    if (!includeAll) {
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      domain.add(['deadline', '>=', today]);
+    }
+    if (status == 'active') {
+      domain.add(['preventive_maintenance_count_new', '>', 0]);
+    } else if (status == 'complete') {
+      domain.addAll([
+        '|',
+        ['preventive_maintenance_done_percentage', '>=', 100],
+        '&',
+        ['preventive_maintenance_count_new', '=', 0],
+        ['preventive_maintenance_count_done', '>', 0],
+      ]);
+    }
+
+    var rows = await _searchRead(
+      _odooPmRequestModel,
+      domain,
+      {
+        'fields': fields,
+        'limit': includeAll ? 2500 : 600,
+        'order': 'deadline asc,id desc',
+      },
+    );
+
+    if (rows.isEmpty && !includeAll && status == 'all') {
+      rows = await _searchRead(
+        _odooPmRequestModel,
+        [],
+        {
+          'fields': fields,
+          'limit': 200,
+          'order': 'deadline desc,id desc',
+        },
+      );
+      for (final m in rows) {
+        m['_fallback_all'] = true;
+      }
+    }
+    return rows;
+  }
+
+  /// Build PM UI cards from `preventive.maintenance` lines (Odoo Masterlist)
+  /// when no `maintenance.request` kanban records exist yet.
+  Future<List<Map<String, dynamic>>> _synthesizePmKanbanFromPreventiveLines({
+    required String status,
+  }) async {
+    const lineFields = ['id', 'name', 'project_id', 'pm_name', 'stage'];
+    List<Map<String, dynamic>> lines;
+    try {
+      lines = await _searchRead(
+        _odooPmModel,
+        [],
+        {
+          'fields': lineFields,
+          'limit': 4000,
+          'order': 'project_id, id desc',
+        },
+      );
+    } catch (e) {
+      debugPrint('⚠️ Cannot read preventive.maintenance: $e');
+      return [];
+    }
+
+    if (lines.isEmpty) return [];
+
+    final Map<int, Map<String, dynamic>> byProject = {};
+    for (final line in lines) {
+      final projectId = _pmM2oId(line['project_id']);
+      if (projectId <= 0) continue;
+
+      final card = byProject.putIfAbsent(projectId, () {
+        return {
+          'id': 0,
+          'name': 'Preventive Maintenance',
+          'project_id': line['project_id'],
+          'preventive_maintenance_count_done': 0,
+          'preventive_maintenance_count_new': 0,
+          'preventive_maintenance_done_percentage': 0.0,
+          'days_left_deadline': 30,
+          '_synthetic_from_pm': true,
+        };
+      });
+
+      if (_isPmLineDone(line['stage'])) {
+        card['preventive_maintenance_count_done'] =
+            (card['preventive_maintenance_count_done'] as int) + 1;
+      } else {
+        card['preventive_maintenance_count_new'] =
+            (card['preventive_maintenance_count_new'] as int) + 1;
+      }
+
+      final reqId = _pmM2oId(line['pm_name']);
+      if (reqId > 0 && (card['id'] as int) == 0) {
+        card['id'] = reqId;
+      }
+    }
+
+    for (final card in byProject.values) {
+      final done = card['preventive_maintenance_count_done'] as int;
+      final todo = card['preventive_maintenance_count_new'] as int;
+      final total = done + todo;
+      card['preventive_maintenance_done_percentage'] =
+          total > 0 ? (done / total * 100.0) : 0.0;
+    }
+
+    debugPrint(
+      '✅ PM UI: built ${byProject.length} project card(s) from preventive.maintenance',
+    );
+    return byProject.values.toList();
+  }
+
+  List<Map<String, dynamic>> _filterPmKanbanRows(
+    List<Map<String, dynamic>> rows,
+    String status,
+  ) {
+    int doneCount(Map<String, dynamic> r) {
+      final v = r['preventive_maintenance_count_done'];
+      if (v is int) return v;
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
+    int newCount(Map<String, dynamic> r) {
+      final v = r['preventive_maintenance_count_new'];
+      if (v is int) return v;
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
+    if (status == 'active') {
+      return rows.where((r) => newCount(r) > 0).toList();
+    }
+    if (status == 'complete') {
+      return rows
+          .where((r) => newCount(r) == 0 && doneCount(r) > 0)
+          .toList();
+    }
+    return rows;
+  }
+
+  Future<List<Map<String, dynamic>>> _searchRead(
+    String model,
+    List<dynamic> domain,
+    Map<String, dynamic> kwargs,
+  ) async {
+    final auth = await _prefsAuth();
+    final result = await _executeKwRaw([
+      database,
+      int.parse(auth['uid']!),
+      auth['pwd']!,
+      model,
+      'search_read',
+      [domain],
+      kwargs,
+    ]);
+    if (result is! List) return [];
+    return List<Map<String, dynamic>>.from(
+      result.map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+  }
+
+  Future<void> _writeModel(
+    String model,
+    List<int> ids,
+    Map<String, dynamic> values,
+  ) async {
+    final auth = await _prefsAuth();
+    await _executeKwRaw([
+      database,
+      int.parse(auth['uid']!),
+      auth['pwd']!,
+      model,
+      'write',
+      [
+        ids,
+        values,
+      ],
+    ]);
+  }
+
+  Future<int> _createModel(String model, Map<String, dynamic> values) async {
+    final auth = await _prefsAuth();
+    final result = await _executeKwRaw([
+      database,
+      int.parse(auth['uid']!),
+      auth['pwd']!,
+      model,
+      'create',
+      [values],
+    ]);
+    if (result is int) return result;
+    return int.tryParse(result?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _unlinkModel(String model, List<int> ids) async {
+    final auth = await _prefsAuth();
+    await _executeKwRaw([
+      database,
+      int.parse(auth['uid']!),
+      auth['pwd']!,
+      model,
+      'unlink',
+      [ids],
+    ]);
+  }
+
+  Future<String?> _sessionCookieHeader() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? cookie = prefs.getString('session_id');
+    final sessId = prefs.getString('sessionId') ?? '';
+    if ((cookie == null || cookie.isEmpty) && sessId.isNotEmpty) {
+      cookie = 'session_id=$sessId';
+    }
+    return cookie;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPmKanbanRequests({
+    required bool includeAll,
+    required String status,
+  }) async {
+    try {
+      await checkAndLoadUserCredentials();
+
+      List<Map<String, dynamic>> rows = [];
+
+      try {
+        final api = await _pmMobileApiCall(
+          '/api/pm/kanban_requests',
+          {
+            'include_all': includeAll,
+            'status': status,
+          },
+        );
+        if (api != null && api['success'] == true) {
+          rows = _pmRowsFromApiResult(api);
+          debugPrint('🔹 PM kanban API returned ${rows.length} row(s)');
+        }
+      } catch (e) {
+        debugPrint('⚠️ PM kanban API: $e');
+      }
+
+      if (rows.isEmpty) {
+        rows = await _fetchPmKanbanViaRpc(
+          includeAll: includeAll,
+          status: status,
+        );
+        debugPrint('🔹 PM kanban RPC returned ${rows.length} row(s)');
+      }
+
+      if (rows.isEmpty) {
+        rows = await _synthesizePmKanbanFromPreventiveLines(status: status);
+      }
+
+      return _filterPmKanbanRows(rows, status);
+    } catch (e) {
+      debugPrint('❌ fetchPmKanbanRequests: $e');
+      lastErrorMessage ??= e.toString();
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPreventiveMaintenanceByProject({
+    required int projectId,
+    required String stage,
+  }) async {
+    await checkAndLoadUserCredentials();
+    final all = await _searchRead(
+      _odooPmModel,
+      [
+        ['project_id', '=', projectId],
+      ],
+      {
+        'fields': _pmFormFields,
+        'limit': 2000,
+        'order': 'lot_location, id',
+      },
+    );
+    final wantDone = stage == 'done';
+    return all
+        .where((r) => wantDone ? _isPmLineDone(r['stage']) : !_isPmLineDone(r['stage']))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPreventiveMaintenanceDashboardRows() async {
+    try {
+      await checkAndLoadUserCredentials();
+
+      try {
+        final api = await _pmMobileApiCall('/api/pm/dashboard_rows', {});
+        final rows = _pmRowsFromApiResult(api);
+        if (rows.isNotEmpty || api != null) return rows;
+      } catch (e) {
+        debugPrint('⚠️ PM dashboard API: $e');
+      }
+
+      return await _searchRead(
+        _odooPmModel,
+        [],
+        {
+          'fields': [
+            'stage',
+            'technician',
+            'create_date',
+            'write_date',
+            'user_signature_date',
+          ],
+          'limit': 4000,
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ fetchPreventiveMaintenanceDashboardRows: $e');
+      lastErrorMessage ??= e.toString();
+      rethrow;
+    }
+  }
+
+  Future<Map<int, Map<String, dynamic>>> fetchUsersByIds(List<int> ids) async {
+    final uniq = ids.toSet().toList();
+    if (uniq.isEmpty) return {};
+    final rows = await _searchRead(
+      'res.users',
+      [
+        ['id', 'in', uniq],
+      ],
+      {
+        'fields': ['id', 'name', 'image_128'],
+        'limit': uniq.length,
+      },
+    );
+    final out = <int, Map<String, dynamic>>{};
+    for (final r in rows) {
+      final id = r['id'];
+      if (id is int) out[id] = r;
+    }
+    return out;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCollectionDashboardCards() async {
+    const fields = [
+      'id',
+      'name',
+      'project_id',
+      'cf_name',
+      'project_collection_count_done',
+      'project_collection_count_new',
+      'project_collection_done_percentage',
+    ];
+    try {
+      await checkAndLoadUserCredentials();
+
+      try {
+        final api = await _pmMobileApiCall('/api/pm/collection_cards', {});
+        final rows = _pmRowsFromApiResult(api);
+        if (rows.isNotEmpty || api != null) return rows;
+      } catch (e) {
+        debugPrint('⚠️ Collection dashboard API: $e');
+      }
+
+      return await _searchRead(
+        _odooPmRequestModel,
+        [],
+        {'fields': fields, 'limit': 800, 'order': 'name'},
+      );
+    } catch (e) {
+      print('⚠️ fetchCollectionDashboardCards: $e');
+      lastErrorMessage ??= e.toString();
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchUatDashboardProjects() async {
+    const fields = [
+      'id',
+      'name',
+      'done_count',
+      'todo_count',
+      'progress_percentage',
+    ];
+    try {
+      return await _searchRead(
+        _odooPmRequestModel,
+        [],
+        {'fields': fields, 'limit': 800, 'order': 'name'},
+      );
+    } catch (e) {
+      print('⚠️ fetchUatDashboardProjects: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPreventiveMaintenanceByRequest({
+    required int requestId,
+    required String stage,
+  }) async {
+    final domains = <List<dynamic>>[
+      [
+        ['pm_name', '=', requestId],
+        ['stage', '=', stage],
+      ],
+      [
+        ['request_id', '=', requestId],
+        ['stage', '=', stage],
+      ],
+      [
+        ['maintenance_request_id', '=', requestId],
+        ['stage', '=', stage],
+      ],
+    ];
+    for (final d in domains) {
+      try {
+        return await _searchRead(
+          _odooPmModel,
+          d,
+          {
+            'fields': _pmFormFields,
+            'limit': 2000,
+            'order': 'lot_location, id',
+          },
+        );
+      } catch (_) {}
+    }
+    throw Exception(
+      'Could not load PM lines for request $requestId (check Odoo domain fields).',
+    );
+  }
+
+  Future<Map<String, dynamic>?> fetchPreventiveMaintenanceDetail(int pmId) async {
+    final rows = await _searchRead(
+      _odooPmModel,
+      [
+        ['id', '=', pmId],
+      ],
+      {'fields': _pmFormFields, 'limit': 1},
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMaintenanceTasksByPmId(int pmId) async {
+    const taskFields = [
+      'id',
+      'name',
+      'equipment_task',
+      'note',
+      'remarks',
+      'category_id',
+      'category',
+      'equipment',
+      'check',
+      'is_yes',
+      'is_no',
+    ];
+    for (final model in [_odooPmTaskModel, _odooPmTaskModelAlt]) {
+      for (final fk in [
+        'maintenance_id',
+        'pm_id',
+        'preventive_maintenance_id',
+      ]) {
+        try {
+          final rows = await _searchRead(
+            model,
+            [
+              [fk, '=', pmId],
+            ],
+            {'fields': taskFields, 'limit': 2000, 'order': 'id'},
+          );
+          return rows;
+        } catch (_) {}
+      }
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> fetchTechnicians() async {
+    return _searchRead(
+      'res.users',
+      [
+        ['active', '=', true],
+        ['share', '=', false],
+      ],
+      {'fields': ['id', 'name', 'login'], 'limit': 500, 'order': 'name'},
+    );
+  }
+
+  Future<void> updatePreventiveMaintenanceTechnician({
+    required int pmId,
+    required int technicianId,
+  }) async {
+    await _writeModel(_odooPmModel, [pmId], {'technician': technicianId});
+  }
+
+  Future<bool> updatePreventiveMaintenanceSignatures({
+    required int pmId,
+    Uint8List? userSignatureBytes,
+    Uint8List? picSignatureBytes,
+    String? representativeName,
+    String? userSignatureDate,
+    String? picName,
+    String? picSignatureDate,
+    bool markDone = false,
+  }) async {
+    final vals = <String, dynamic>{};
+    if (userSignatureBytes != null) {
+      vals['user_signature'] = base64Encode(userSignatureBytes);
+    }
+    if (picSignatureBytes != null) {
+      vals['pic_sign'] = base64Encode(picSignatureBytes);
+    }
+    if (representativeName != null) {
+      vals['representative_name'] = representativeName;
+    }
+    if (userSignatureDate != null) {
+      vals['user_signature_date'] = userSignatureDate;
+    }
+    if (picName != null) vals['pic_name'] = picName;
+    if (picSignatureDate != null) {
+      vals['pic_sign_date'] = picSignatureDate;
+    }
+    if (markDone) vals['stage'] = 'done';
+    await _writeModel(_odooPmModel, [pmId], vals);
+    return markDone;
+  }
+
+  Future<void> clearPreventiveMaintenanceSignatures({
+    required int pmId,
+    bool clearUser = false,
+    bool clearPic = false,
+  }) async {
+    final vals = <String, dynamic>{};
+    if (clearUser) {
+      vals['user_signature'] = false;
+      vals['user_signature_date'] = false;
+      vals['representative_name'] = false;
+    }
+    if (clearPic) {
+      vals['pic_sign'] = false;
+      vals['pic_sign_date'] = false;
+      vals['pic_name'] = false;
+    }
+    if (vals.isEmpty) return;
+    await _writeModel(_odooPmModel, [pmId], vals);
+  }
+
+  Future<Uint8List> fetchPreventiveMaintenanceReportPdf({
+    required int pmId,
+    required String reportName,
+  }) async {
+    final cookie = await _sessionCookieHeader();
+    final path = '/report/pdf/${Uri.encodeComponent(reportName)}/$pmId';
+    final resp = await http.get(
+      Uri.parse('$baseUrl$path'),
+      headers: {if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie},
+    );
+    if (resp.statusCode != 200) {
+      throw Exception('Report HTTP ${resp.statusCode}');
+    }
+    return resp.bodyBytes;
+  }
+
+  Future<Uint8List> fetchPreventiveMaintenanceReportPdfForIds({
+    required List<int> pmIds,
+    required String reportName,
+  }) async {
+    if (pmIds.isEmpty) return Uint8List(0);
+    final cookie = await _sessionCookieHeader();
+    final joined = pmIds.join(',');
+    final path =
+        '/report/pdf/${Uri.encodeComponent(reportName)}/$joined';
+    final resp = await http.get(
+      Uri.parse('$baseUrl$path'),
+      headers: {if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie},
+    );
+    if (resp.statusCode != 200) {
+      throw Exception('Report HTTP ${resp.statusCode}');
+    }
+    return resp.bodyBytes;
+  }
+
+  Future<void> updateMaintenanceTaskStatus({
+    required int taskId,
+    bool? check,
+    bool? isYes,
+    bool? isNo,
+  }) async {
+    final vals = <String, dynamic>{};
+    if (check != null) vals['check'] = check;
+    if (isYes != null) vals['is_yes'] = isYes;
+    if (isNo != null) vals['is_no'] = isNo;
+    if (vals.isEmpty) return;
+    for (final model in [_odooPmTaskModel, _odooPmTaskModelAlt]) {
+      try {
+        await _writeModel(model, [taskId], vals);
+        return;
+      } catch (_) {}
+    }
+    throw Exception('Could not update task $taskId');
+  }
+
+  Future<void> updateMaintenanceTasksBulk({
+    required List<int> taskIds,
+    required Map<String, dynamic> values,
+  }) async {
+    if (taskIds.isEmpty || values.isEmpty) return;
+    for (final model in [_odooPmTaskModel, _odooPmTaskModelAlt]) {
+      try {
+        await _writeModel(model, taskIds, values);
+        return;
+      } catch (_) {}
+    }
+    throw Exception('Could not bulk-update tasks');
+  }
+
+  Future<bool> uploadPmAttachment({
+    required int pmId,
+    required String fileName,
+    required Uint8List bytes,
+    String? mimeType,
+  }) async {
+    try {
+      await _createModel('ir.attachment', {
+        'name': fileName,
+        'type': 'binary',
+        'datas': base64Encode(bytes),
+        'mimetype': mimeType ?? 'application/octet-stream',
+        'res_model': _odooPmModel,
+        'res_id': pmId,
+      });
+      return true;
+    } catch (e) {
+      print('❌ uploadPmAttachment: $e');
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPmAttachments(int pmId) async {
+    return _searchRead(
+      'ir.attachment',
+      [
+        ['res_model', '=', _odooPmModel],
+        ['res_id', '=', pmId],
+      ],
+      {
+        'fields': ['id', 'name', 'mimetype', 'url', 'type'],
+        'limit': 200,
+        'order': 'id desc',
+      },
+    );
+  }
+
+  Future<bool> deletePmAttachment(int attachmentId) async {
+    try {
+      await _unlinkModel('ir.attachment', [attachmentId]);
+      return true;
+    } catch (e) {
+      print('❌ deletePmAttachment: $e');
+      return false;
+    }
+  }
+
+  Future<void> updatePreventiveMaintenanceRemarks({
+    required int pmId,
+    required String remarks,
+  }) async {
+    await _writeModel(_odooPmModel, [pmId], {'remarks': remarks});
+  }
+
+  Future<void> updatePreventiveMaintenanceFields({
+    required int pmId,
+    required Map<String, dynamic> fields,
+  }) async {
+    if (fields.isEmpty) return;
+    await _writeModel(_odooPmModel, [pmId], fields);
+  }
+
+  /// Collection drill-down: tries a few common collection stage field names.
+  Future<List<Map<String, dynamic>>> fetchCollectionPmRows({
+    required int projectId,
+    required String stage,
+  }) async {
+    final stageVariants = <String>{
+      stage,
+      if (stage == 'collected') ...['done', 'collected', 'complete'],
+      if (stage == 'new') ...['new', 'draft', 'todo'],
+    }.toList();
+    for (final field in [
+      'collection_stage',
+      'collection_status',
+      'cf_stage',
+    ]) {
+      for (final st in stageVariants) {
+        try {
+          return await _searchRead(
+            _odooPmModel,
+            [
+              ['project_id', '=', projectId],
+              [field, '=', st],
+            ],
+            {
+              'fields': _pmFormFields,
+              'limit': 2000,
+              'order': 'lot_location, id',
+            },
+          );
+        } catch (_) {}
+      }
+    }
+    try {
+      return await _searchRead(
+        _odooPmModel,
+        [
+          ['project_id', '=', projectId],
+        ],
+        {
+          'fields': _pmFormFields,
+          'limit': 2000,
+          'order': 'id desc',
+        },
+      );
+    } catch (e) {
+      print('⚠️ fetchCollectionPmRows: $e');
+      return [];
+    }
+  }
+
+
+  static const Map<String, String> _expenseRpcHeaders = {
+    'Content-Type': 'application/json',
+  };
+
+  Future<void> _ensureWebSession({bool force = false}) async {
+    await checkAndLoadUserCredentials();
+  }
+
+  Future<Map<String, String>> _odooHeaders() async => _expenseRpcHeaders;
+
+  /// Sum of hr.expense total_amount for current user's employee where state = draft — "To Report" (not yet submitted).
+  Future<double> getExpenseToReportTotal() async {
+    return _getExpenseTotalForStates(["draft"]);
+  }
+
+  /// Sum of hr.expense total_amount where state = reported — "Under Validation" (submitted, awaiting approval).
+  Future<double> getExpenseUnderValidationTotal() async {
+    return _getExpenseTotalForStates(["reported"]);
+  }
+
+  /// Sum of hr.expense total_amount where state = approved — "To be reimbursed".
+  Future<double> getExpenseToBeReimbursedTotal() async {
+    return _getExpenseTotalForStates(["approved"]);
+  }
+
+  Future<double> _getExpenseTotalForStates(List<String> states) async {
+    final ok = await checkAndLoadUserCredentials();
+    if (!ok || _userId == null) return 0;
+    try {
+      final empResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          "jsonrpc": "2.0",
+          "method": "call",
+          "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+              database,
+              int.parse(_userId!),
+              _password,
+              "hr.employee",
+              "search_read",
+              [
+                [
+                  ["user_id", "=", int.parse(_userId!)]
+                ]
+              ],
+              {
+                "fields": ["id"],
+                "limit": 1
+              }
+            ]
+          },
+          "id": 1
+        }),
+      );
+      if (empResp.statusCode != 200) return 0;
+      final empData = json.decode(empResp.body);
+      if (empData["result"] == null || (empData["result"] as List).isEmpty)
+        return 0;
+      final employeeId = (empData["result"] as List).first["id"] as int;
+      final expResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          "jsonrpc": "2.0",
+          "method": "call",
+          "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+              database,
+              int.parse(_userId!),
+              _password,
+              "hr.expense",
+              "search_read",
+              [
+                [
+                  ["employee_id", "=", employeeId],
+                  ["state", "in", states]
+                ]
+              ],
+              {
+                "fields": ["total_amount"]
+              }
+            ]
+          },
+          "id": 2
+        }),
+      );
+      if (expResp.statusCode != 200) return 0;
+      final expData = json.decode(expResp.body);
+      if (expData["result"] == null || expData["result"] is! List) return 0;
+      double sum = 0;
+      for (final e in expData["result"] as List) {
+        if (e is Map && e["total_amount"] != null)
+          sum += (e["total_amount"] is num)
+              ? (e["total_amount"] as num).toDouble()
+              : 0;
+      }
+      return sum;
+    } catch (e) {
+      debugPrint('_getExpenseTotalForStates($states): $e');
+      return 0;
+    }
+  }
+
+  /// Fetch current user's expenses for list/cards: to report, under validation, to reimburse.
+  /// Returns list of maps: id, name (description), total_amount, date, state, employee_name, employee_image (base64), attachment_count.
+  Future<List<Map<String, dynamic>>> fetchMyExpenses() async {
+    final list = <Map<String, dynamic>>[];
+    final ok = await checkAndLoadUserCredentials();
+    if (!ok || _userId == null) return list;
+    try {
+      final uid = int.parse(_userId!);
+      // 1) Get current user's employee_id
+      final empResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          "jsonrpc": "2.0",
+          "method": "call",
+          "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+              database,
+              uid,
+              _password,
+              "hr.employee",
+              "search_read",
+              [
+                [
+                  ["user_id", "=", uid]
+                ]
+              ],
+              {
+                "fields": ["id"],
+                "limit": 1
+              }
+            ]
+          },
+          "id": 1
+        }),
+      );
+      if (empResp.statusCode != 200) return list;
+      final empData = json.decode(empResp.body);
+      if (empData["result"] == null || (empData["result"] as List).isEmpty)
+        return list;
+      final employeeId = (empData["result"] as List).first["id"] as int;
+      // 2) Fetch hr.expense for this employee (all states: draft, reported, approved, refuse, done)
+      final expResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          "jsonrpc": "2.0",
+          "method": "call",
+          "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+              database,
+              uid,
+              _password,
+              "hr.expense",
+              "search_read",
+              [
+                [
+                  ["employee_id", "=", employeeId]
+                ]
+              ],
+              {
+                "fields": [
+                  "id",
+                  "name",
+                  "employee_id",
+                  "total_amount",
+                  "date",
+                  "state",
+                  "sheet_id"
+                ],
+                "order": "date desc, id desc"
+              }
+            ]
+          },
+          "id": 2
+        }),
+      );
+      if (expResp.statusCode != 200) return list;
+      final expData = json.decode(expResp.body);
+      final expenses =
+          expData["result"] is List ? expData["result"] as List : <dynamic>[];
+      if (expenses.isEmpty) return list;
+      final empIds = <int>{};
+      for (final e in expenses) {
+        if (e is! Map) continue;
+        final emp = e["employee_id"];
+        if (emp is int)
+          empIds.add(emp);
+        else if (emp is List && emp.isNotEmpty && emp[0] != null)
+          empIds.add(emp[0] is int
+              ? emp[0] as int
+              : int.tryParse(emp[0].toString()) ?? 0);
+      }
+      // 3) Get employee name and image
+      final Map<int, Map<String, dynamic>> empMap = {};
+      if (empIds.isNotEmpty) {
+        final empReadResp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+              "service": "object",
+              "method": "execute_kw",
+              "args": [
+                database,
+                uid,
+                _password,
+                "hr.employee",
+                "search_read",
+                [
+                  [
+                    ["id", "in", empIds.toList()]
+                  ]
+                ],
+                {
+                  "fields": ["id", "name", "image_128"]
+                }
+              ]
+            },
+            "id": 3
+          }),
+        );
+        if (empReadResp.statusCode == 200) {
+          final empReadData = json.decode(empReadResp.body);
+          final empList = empReadData["result"] is List
+              ? empReadData["result"] as List
+              : <dynamic>[];
+          for (final m in empList) {
+            if (m is Map) {
+              final id = m["id"] is int
+                  ? m["id"] as int
+                  : int.tryParse(m["id"]?.toString() ?? '0') ?? 0;
+              empMap[id] = {
+                "name": m["name"]?.toString() ?? '',
+                "image_128": m["image_128"]
+              };
+            }
+          }
+        }
+      }
+      // 4) Attachment count per expense (ir.attachment res_model=hr.expense, res_id=expense_id)
+      final Map<int, int> attachmentCountMap = {};
+      try {
+        final attResp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+              "service": "object",
+              "method": "execute_kw",
+              "args": [
+                database,
+                uid,
+                _password,
+                "ir.attachment",
+                "search_read",
+                [
+                  [
+                    ["res_model", "=", "hr.expense"],
+                    [
+                      "res_id",
+                      "in",
+                      expenses
+                          .map<int>((e) => e is Map && e["id"] != null
+                              ? (e["id"] is int
+                                  ? e["id"] as int
+                                  : int.tryParse(e["id"].toString()) ?? 0)
+                              : 0)
+                          .where((v) => v > 0)
+                          .toList()
+                    ]
+                  ]
+                ],
+                {
+                  "fields": ["res_id"]
+                }
+              ]
+            },
+            "id": 4
+          }),
+        );
+        if (attResp.statusCode == 200) {
+          final attData = json.decode(attResp.body);
+          final attList = attData["result"] is List
+              ? attData["result"] as List
+              : <dynamic>[];
+          for (final a in attList) {
+            if (a is Map && a["res_id"] != null) {
+              final rid = a["res_id"] is int
+                  ? a["res_id"] as int
+                  : int.tryParse(a["res_id"]?.toString() ?? '0') ?? 0;
+              attachmentCountMap[rid] = (attachmentCountMap[rid] ?? 0) + 1;
+            }
+          }
+        }
+      } catch (_) {}
+      // 5) Build result list
+      for (final e in expenses) {
+        if (e is! Map) continue;
+        final eid = e["id"] is int
+            ? e["id"] as int
+            : int.tryParse(e["id"]?.toString() ?? '0') ?? 0;
+        int? empId;
+        final empRaw = e["employee_id"];
+        if (empRaw is int) {
+          empId = empRaw;
+        } else if (empRaw is List && empRaw.isNotEmpty && empRaw[0] != null) {
+          empId = empRaw[0] is int
+              ? empRaw[0] as int
+              : int.tryParse(empRaw[0].toString());
+        }
+        final empInfo = empId != null ? empMap[empId] : null;
+        String empName = empInfo?["name"] ?? '';
+        if (empName.isEmpty &&
+            empRaw is List &&
+            empRaw.length > 1 &&
+            empRaw[1] != null) {
+          empName = empRaw[1].toString();
+        }
+        if (empName.isEmpty) empName = '—';
+        list.add({
+          "id": eid,
+          "name": e["name"]?.toString() ?? '—',
+          "total_amount": e["total_amount"] is num
+              ? (e["total_amount"] as num).toDouble()
+              : 0.0,
+          "date": e["date"]?.toString(),
+          "state": e["state"]?.toString() ?? 'draft',
+          "sheet_id": e["sheet_id"],
+          "employee_name": empName,
+          "employee_image": empInfo?["image_128"],
+          "attachment_count": attachmentCountMap[eid] ?? 0,
+        });
+      }
+      return list;
+    } catch (e) {
+      debugPrint('fetchMyExpenses: $e');
+      return list;
+    }
+  }
+
+  /// Fetch expense reports (`hr.expense.sheet`) for current user with linked expense lines.
+  Future<List<Map<String, dynamic>>> fetchMyExpenseReports() async {
+    final reports = <Map<String, dynamic>>[];
+    final ok = await checkAndLoadUserCredentials();
+    if (!ok || _userId == null) return reports;
+    try {
+      final uid = int.parse(_userId!);
+      final empResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.employee',
+              'search_read',
+              [
+                [
+                  ['user_id', '=', uid]
+                ]
+              ],
+              {
+                'fields': ['id'],
+                'limit': 1
+              }
+            ]
+          },
+          'id': 1
+        }),
+      );
+      if (empResp.statusCode != 200) return reports;
+      final empData = json.decode(empResp.body);
+      if (empData['error'] != null ||
+          empData['result'] is! List ||
+          (empData['result'] as List).isEmpty) {
+        return reports;
+      }
+      final employeeId = (empData['result'] as List).first['id'] as int;
+
+      final sheetResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.expense.sheet',
+              'search_read',
+              [
+                [
+                  ['employee_id', '=', employeeId]
+                ]
+              ],
+              {
+                'fields': [
+                  'id',
+                  'name',
+                  'state',
+                  'total_amount',
+                  'accounting_date',
+                  'expense_line_ids'
+                ],
+                'order': 'id desc'
+              }
+            ]
+          },
+          'id': 2
+        }),
+      );
+      if (sheetResp.statusCode != 200) return reports;
+      final sheetData = json.decode(sheetResp.body);
+      if (sheetData['error'] != null || sheetData['result'] is! List)
+        return reports;
+      final sheetList = sheetData['result'] as List;
+      if (sheetList.isEmpty) return reports;
+
+      final expenseIds = <int>{};
+      for (final sheet in sheetList) {
+        if (sheet is! Map) continue;
+        final raw = sheet['expense_line_ids'];
+        if (raw is List) {
+          for (final id in raw) {
+            final parsed = id is int ? id : int.tryParse(id.toString());
+            if (parsed != null && parsed > 0) expenseIds.add(parsed);
+          }
+        }
+      }
+
+      final Map<int, Map<String, dynamic>> expenseMap = {};
+      if (expenseIds.isNotEmpty) {
+        final expResp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'hr.expense',
+                'search_read',
+                [
+                  [
+                    ['id', 'in', expenseIds.toList()]
+                  ]
+                ],
+                {
+                  'fields': ['id', 'name', 'total_amount', 'date', 'state']
+                }
+              ]
+            },
+            'id': 3
+          }),
+        );
+        if (expResp.statusCode == 200) {
+          final expData = json.decode(expResp.body);
+          final expList = expData['result'] is List
+              ? expData['result'] as List
+              : <dynamic>[];
+          for (final item in expList) {
+            if (item is! Map || item['id'] == null) continue;
+            final id = item['id'] is int
+                ? item['id'] as int
+                : int.tryParse(item['id'].toString()) ?? 0;
+            if (id <= 0) continue;
+            expenseMap[id] = {
+              'id': id,
+              'name': item['name']?.toString() ?? '—',
+              'total_amount': item['total_amount'] is num
+                  ? (item['total_amount'] as num).toDouble()
+                  : 0.0,
+              'date': item['date']?.toString(),
+              'state': item['state']?.toString() ?? '',
+            };
+          }
+        }
+      }
+
+      for (final sheet in sheetList) {
+        if (sheet is! Map) continue;
+        final lineIdsRaw = sheet['expense_line_ids'];
+        final lines = <Map<String, dynamic>>[];
+        if (lineIdsRaw is List) {
+          for (final rawId in lineIdsRaw) {
+            final lineId =
+                rawId is int ? rawId : int.tryParse(rawId.toString());
+            if (lineId != null && lineId > 0 && expenseMap[lineId] != null) {
+              lines.add(expenseMap[lineId]!);
+            }
+          }
+        }
+        reports.add({
+          'id': sheet['id'],
+          'name': sheet['name']?.toString() ?? 'Report',
+          'state': sheet['state']?.toString() ?? '',
+          'total_amount': sheet['total_amount'] is num
+              ? (sheet['total_amount'] as num).toDouble()
+              : 0.0,
+          'date': sheet['accounting_date']?.toString(),
+          'lines': lines,
+        });
+      }
+      return reports;
+    } catch (e) {
+      debugPrint('fetchMyExpenseReports: $e');
+      return reports;
+    }
+  }
+
+  Future<OdooActionResult> createExpenseReportFromExpenses(
+    List<int> expenseIds, {
+    String? reportTitle,
+  }) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null) {
+      return OdooActionResult(id: null, error: 'Not signed in');
+    }
+    final cleanIds = expenseIds.where((id) => id > 0).toSet().toList();
+    if (cleanIds.isEmpty) {
+      return OdooActionResult(id: null, error: 'No expenses selected');
+    }
+    try {
+      final uid = int.parse(_userId!);
+
+      final empResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.employee',
+              'search_read',
+              [
+                [
+                  ['user_id', '=', uid]
+                ]
+              ],
+              {
+                'fields': ['id'],
+                'limit': 1
+              }
+            ]
+          },
+          'id': 1
+        }),
+      );
+      if (empResp.statusCode != 200) {
+        return OdooActionResult(id: null, error: 'Could not load employee');
+      }
+      final empData = json.decode(empResp.body);
+      if (empData['error'] != null ||
+          empData['result'] is! List ||
+          (empData['result'] as List).isEmpty) {
+        return OdooActionResult(
+          id: null,
+          error: _odooRpcErrorMessage(empData['error']) ??
+              'No employee linked to your user',
+        );
+      }
+      final employeeId = (empData['result'] as List).first['id'] as int;
+      final customTitle = reportTitle?.trim();
+      final reportName = customTitle != null && customTitle.isNotEmpty
+          ? customTitle
+          : 'Expense Report ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}';
+
+      final createAttempts = <Map<String, dynamic>>[
+        {
+          'name': reportName,
+          'employee_id': employeeId,
+          'expense_line_ids': [
+            [6, 0, cleanIds]
+          ],
+        },
+        {
+          'name': reportName,
+          'employee_id': employeeId,
+          'expense_line_ids': cleanIds.map((id) => [4, id]).toList(),
+        },
+        {
+          'name': reportName,
+          'employee_id': employeeId,
+        },
+      ];
+
+      int? createdReportId;
+      String? createErr;
+      for (var i = 0; i < createAttempts.length; i++) {
+        final vals = createAttempts[i];
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'hr.expense.sheet',
+                'create',
+                [vals],
+              ],
+            },
+            'id': 10 + i,
+          }),
+        );
+        if (resp.statusCode != 200) {
+          createErr = 'HTTP ${resp.statusCode}';
+          continue;
+        }
+        final data = json.decode(resp.body);
+        if (data['error'] != null) {
+          createErr =
+              _odooRpcErrorMessage(data['error']) ?? 'Create report failed';
+          continue;
+        }
+        createdReportId = _parseOdooCreateId(data['result']);
+        if (createdReportId != null && createdReportId > 0) break;
+      }
+
+      if (createdReportId == null || createdReportId <= 0) {
+        return OdooActionResult(id: null, error: createErr ?? 'Could not create report');
+      }
+
+      final linkAttempts = <Map<String, dynamic>>[
+        {'sheet_id': createdReportId},
+        {'expense_sheet_id': createdReportId},
+      ];
+      bool linked = false;
+      for (var i = 0; i < linkAttempts.length; i++) {
+        final vals = linkAttempts[i];
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'hr.expense',
+                'write',
+                [
+                  cleanIds,
+                  vals,
+                ],
+              ],
+            },
+            'id': 30 + i,
+          }),
+        );
+        if (resp.statusCode != 200) continue;
+        final data = json.decode(resp.body);
+        if (data['error'] == null && data['result'] == true) {
+          linked = true;
+          break;
+        }
+      }
+
+      if (!linked) {
+        final verifyReports = await fetchMyExpenseReports();
+        final created = verifyReports.any((r) {
+          final id = r['id'] is int
+              ? r['id'] as int
+              : int.tryParse(r['id']?.toString() ?? '0') ?? 0;
+          final lines = r['lines'] is List
+              ? List<Map<String, dynamic>>.from(r['lines'] as List)
+              : <Map<String, dynamic>>[];
+          return id == createdReportId &&
+              lines.any((line) {
+                final eid = line['id'] is int
+                    ? line['id'] as int
+                    : int.tryParse(line['id']?.toString() ?? '0') ?? 0;
+                return cleanIds.contains(eid);
+              });
+        });
+        if (!created) {
+          return OdooActionResult(id: null, error: 'Report created but selected expenses could not be linked');
+        }
+      }
+
+      return OdooActionResult(id: createdReportId, error: null);
+    } catch (e, st) {
+      debugPrint('createExpenseReportFromExpenses: $e\n$st');
+      return OdooActionResult(id: null, error: e.toString());
+    }
+  }
+
+  Future<String?> renameExpenseReport({
+    required int reportId,
+    required String newName,
+  }) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null)
+      return 'Not signed in';
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return 'Report name is required';
+    try {
+      final uid = int.parse(_userId!);
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.expense.sheet',
+              'write',
+              [
+                [reportId],
+                {'name': trimmed},
+              ],
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200)
+        return 'Update failed (HTTP ${resp.statusCode})';
+      final data = json.decode(resp.body);
+      if (data['error'] != null) {
+        return _odooRpcErrorMessage(data['error']) ?? 'Update failed';
+      }
+      return null;
+    } catch (e) {
+      debugPrint('renameExpenseReport: $e');
+      return e.toString();
+    }
+  }
+
+  Future<String?> deleteExpenseReport(int reportId) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null)
+      return 'Not signed in';
+    try {
+      final uid = int.parse(_userId!);
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.expense.sheet',
+              'unlink',
+              [
+                [reportId],
+              ],
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200)
+        return 'Delete failed (HTTP ${resp.statusCode})';
+      final data = json.decode(resp.body);
+      if (data['error'] != null) {
+        return _odooRpcErrorMessage(data['error']) ?? 'Delete failed';
+      }
+      return null;
+    } catch (e) {
+      debugPrint('deleteExpenseReport: $e');
+      return e.toString();
+    }
+  }
+
+  Future<String?> submitExpenseReportToManager(int reportId) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null)
+      return 'Not signed in';
+    if (reportId <= 0) return 'Invalid report';
+    try {
+      final uid = int.parse(_userId!);
+      final methodAttempts = <String>[
+        'action_submit_sheet',
+        'action_submit_expenses',
+        'action_submit',
+      ];
+
+      String? lastErr;
+      for (var i = 0; i < methodAttempts.length; i++) {
+        final methodName = methodAttempts[i];
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'hr.expense.sheet',
+                methodName,
+                [
+                  [reportId],
+                ],
+              ],
+            },
+            'id': i + 1,
+          }),
+        );
+        if (resp.statusCode != 200) {
+          lastErr = 'HTTP ${resp.statusCode}';
+          continue;
+        }
+        final data = json.decode(resp.body);
+        if (data['error'] != null) {
+          lastErr = _odooRpcErrorMessage(data['error']) ?? 'Submit failed';
+          continue;
+        }
+        return null;
+      }
+      return lastErr ?? 'Could not submit report to manager';
+    } catch (e) {
+      debugPrint('submitExpenseReportToManager: $e');
+      return e.toString();
+    }
+  }
+
+  Future<String?> _fetchExpenseReportState(int reportId) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null) return null;
+    if (reportId <= 0) return null;
+    try {
+      final uid = int.parse(_userId!);
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.expense.sheet',
+              'read',
+              [
+                [reportId]
+              ],
+              {
+                'fields': ['state']
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200) return null;
+      final data = json.decode(resp.body);
+      if (data['error'] != null || data['result'] is! List) return null;
+      final rows = data['result'] as List;
+      if (rows.isEmpty || rows.first is! Map) return null;
+      return rows.first['state']?.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> resetExpenseReportToDraft(int reportId) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null)
+      return 'Not signed in';
+    if (reportId <= 0) return 'Invalid report';
+    try {
+      final uid = int.parse(_userId!);
+      final methodAttempts = <String>[
+        'reset_expense_sheets',
+        'action_sheet_move_to_draft',
+        'action_draft',
+        'action_reset_to_draft',
+        'reset_to_draft',
+        'action_set_to_draft',
+        'button_draft',
+      ];
+
+      String? lastErr;
+      for (var i = 0; i < methodAttempts.length; i++) {
+        final methodName = methodAttempts[i];
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'hr.expense.sheet',
+                methodName,
+                [
+                  [reportId],
+                ],
+              ],
+            },
+            'id': i + 1,
+          }),
+        );
+        if (resp.statusCode != 200) {
+          lastErr = 'HTTP ${resp.statusCode}';
+          continue;
+        }
+        final data = json.decode(resp.body);
+        if (data['error'] != null) {
+          lastErr =
+              _odooRpcErrorMessage(data['error']) ?? 'Reset to draft failed';
+          continue;
+        }
+        final newState = await _fetchExpenseReportState(reportId);
+        if (newState == null || newState == 'draft') {
+          return null;
+        }
+        lastErr = 'Reset action succeeded but report is still "$newState"';
+      }
+      return lastErr ?? 'Could not reset report to draft';
+    } catch (e) {
+      debugPrint('resetExpenseReportToDraft: $e');
+      return e.toString();
+    }
+  }
+  Future<String?> removeExpenseFromReport({
+    required int expenseId,
+    int? reportId,
+  }) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null)
+      return 'Not signed in';
+    if (expenseId <= 0) return 'Invalid expense';
+    try {
+      final uid = int.parse(_userId!);
+      final attempts = <Map<String, dynamic>>[
+        {'sheet_id': false},
+        {'expense_sheet_id': false},
+      ];
+
+      for (var i = 0; i < attempts.length; i++) {
+        final vals = attempts[i];
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'hr.expense',
+                'write',
+                [
+                  [expenseId],
+                  vals,
+                ],
+              ],
+            },
+            'id': i + 1,
+          }),
+        );
+        if (resp.statusCode != 200) continue;
+        final data = json.decode(resp.body);
+        if (data['error'] == null && data['result'] == true) {
+          return null;
+        }
+      }
+
+      if (reportId != null && reportId > 0) {
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'hr.expense.sheet',
+                'write',
+                [
+                  [reportId],
+                  {
+                    'expense_line_ids': [
+                      [3, expenseId]
+                    ]
+                  },
+                ],
+              ],
+            },
+            'id': 99,
+          }),
+        );
+        if (resp.statusCode == 200) {
+          final data = json.decode(resp.body);
+          if (data['error'] == null && data['result'] == true) {
+            return null;
+          }
+          if (data['error'] != null) {
+            return _odooRpcErrorMessage(data['error']) ??
+                'Could not remove expense from report';
+          }
+        }
+      }
+
+      return 'Could not remove expense from report';
+    } catch (e) {
+      debugPrint('removeExpenseFromReport: $e');
+      return e.toString();
+    }
+  }
+  static String? _odooRpcErrorMessage(dynamic error) {
+    if (error is! Map) return error?.toString();
+    final data = error['data'];
+    if (data is Map) {
+      final msg = data['message'];
+      if (msg != null) return msg.toString();
+      final dbg = data['debug'];
+      if (dbg != null) return dbg.toString().split('\n').first;
+    }
+    return error.toString();
+  }
+
+  static int? _parseOdooCreateId(dynamic result) {
+    if (result is int) return result;
+    if (result is List && result.isNotEmpty) {
+      final first = result.first;
+      if (first is int) return first;
+      return int.tryParse(first.toString());
+    }
+    return null;
+  }
+
+  /// Creates a draft [hr.expense] for the current user's linked [hr.employee].
+  /// Tries common field combinations for different Odoo versions.
+  Future<OdooActionResult> createHrExpense({
+    required int productId,
+    required String name,
+    required double totalAmount,
+    required DateTime date,
+    required bool paidByEmployee,
+    String? note,
+    int? projectId,
+    int? projectSoId,
+    String? wayMode,
+    String? fromAddress,
+    String? toAddress,
+    double? quantity,
+    double? unitAmount,
+    List<int>? taxIds,
+  }) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null) {
+      return OdooActionResult(id: null, error: 'Not signed in');
+    }
+    if (name.trim().isEmpty) {
+      return OdooActionResult(id: null, error: 'Description is required');
+    }
+    if (totalAmount <= 0) {
+      return OdooActionResult(id: null, error: 'Total must be greater than zero');
+    }
+    try {
+      final uid = int.parse(_userId!);
+      final empResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.employee',
+              'search_read',
+              [
+                [
+                  ['user_id', '=', uid]
+                ]
+              ],
+              {
+                'fields': ['id', 'company_id'],
+                'limit': 1
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (empResp.statusCode != 200) {
+        return OdooActionResult(
+          id: null,
+          error: 'Could not load employee (${empResp.statusCode})',
+        );
+      }
+      final empData = json.decode(empResp.body);
+      if (empData['error'] != null) {
+        return OdooActionResult(
+          id: null,
+          error:
+              _odooRpcErrorMessage(empData['error']) ?? 'Employee lookup failed',
+        );
+      }
+      final empRows =
+          empData['result'] is List ? empData['result'] as List : <dynamic>[];
+      if (empRows.isEmpty) {
+        return OdooActionResult(id: null, error: 'No HR employee linked to your user. Ask an admin to link your user to an employee.');
+      }
+      final empRow = empRows.first;
+      if (empRow is! Map) {
+        return OdooActionResult(id: null, error: 'Invalid employee response');
+      }
+      final employeeId = empRow['id'] is int
+          ? empRow['id'] as int
+          : int.tryParse(empRow['id']?.toString() ?? '0') ?? 0;
+      if (employeeId <= 0) {
+        return OdooActionResult(id: null, error: 'Invalid employee id');
+      }
+      int? companyId;
+      final cid = empRow['company_id'];
+      if (cid is List && cid.isNotEmpty && cid[0] != null && cid[0] != false) {
+        companyId =
+            cid[0] is int ? cid[0] as int : int.tryParse(cid[0].toString());
+      }
+
+      // Odoo validates expense UoM against the product's UoM category (_check_product_uom_category).
+      // Without product_uom_id, defaults can mismatch (e.g. Mileage product uses km, default is Units).
+      int? productUomId;
+      final uomResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'product.product',
+              'read',
+              [
+                [productId]
+              ],
+              {
+                'fields': ['uom_id']
+              },
+            ],
+          },
+          'id': 2,
+        }),
+      );
+      if (uomResp.statusCode == 200) {
+        final uomData = json.decode(uomResp.body);
+        if (uomData['error'] == null && uomData['result'] is List) {
+          final uomRows = uomData['result'] as List;
+          if (uomRows.isNotEmpty && uomRows.first is Map) {
+            final u = (uomRows.first as Map)['uom_id'];
+            if (u is List && u.isNotEmpty && u[0] != null && u[0] != false) {
+              productUomId =
+                  u[0] is int ? u[0] as int : int.tryParse(u[0].toString());
+            }
+          }
+        }
+      }
+
+      final dateStr = DateFormat('yyyy-MM-dd').format(date);
+      final mode = paidByEmployee ? 'own_account' : 'company_account';
+      final noteTrim = note?.trim();
+      final noteEmpty = noteTrim == null || noteTrim.isEmpty;
+      final cleanWayMode = (() {
+        final raw = wayMode?.trim();
+        if (raw == null || raw.isEmpty) return null;
+        if (raw == '1way' || raw == '2way') return raw;
+        return null;
+      })();
+      final cleanFrom =
+          fromAddress?.trim().isEmpty == true ? null : fromAddress?.trim();
+      final cleanTo =
+          toAddress?.trim().isEmpty == true ? null : toAddress?.trim();
+      final effectiveQty = quantity ?? 1.0;
+      final effectiveUnit = unitAmount ?? totalAmount;
+      // tax_ids uses Odoo ORM command [(6, 0, [ids])]
+      final taxIdsCmd = (taxIds != null && taxIds.isNotEmpty)
+          ? [
+              [6, 0, taxIds]
+            ]
+          : null;
+
+      // Build vals with correct Odoo field names (confirmed from hr.expense fields_get).
+      // project_customer = Project Name (many2one), from_where / to_where = From/To (char),
+      // way_mode = Way (selection: 1way/2way), description = Notes (text).
+      final vals = <String, dynamic>{
+        'employee_id': employeeId,
+        'product_id': productId,
+        'name': name.trim(),
+        'date': dateStr,
+        'payment_mode': mode,
+        'quantity': effectiveQty,
+        'unit_amount': effectiveUnit,
+        if (productUomId != null) 'product_uom_id': productUomId,
+        if (!noteEmpty) 'description': noteTrim,
+        if (projectId != null) 'project_customer': projectId,
+        if (projectSoId != null) 'project_so_no': projectSoId,
+        if (cleanWayMode != null) 'way_mode': cleanWayMode,
+        if (cleanFrom != null) 'from_where': cleanFrom,
+        if (cleanTo != null) 'to_where': cleanTo,
+        if (taxIdsCmd != null) 'tax_ids': taxIdsCmd,
+        if (companyId != null) 'company_id': companyId,
+      };
+
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.expense',
+              'create',
+              [vals],
+            ],
+          },
+          'id': 10,
+        }),
+      );
+      if (resp.statusCode != 200) {
+        return OdooActionResult(id: null, error: 'HTTP ${resp.statusCode}');
+      }
+      final data = json.decode(resp.body);
+      if (data['error'] != null) {
+        final errMsg = _odooRpcErrorMessage(data['error']) ?? 'Create failed';
+        debugPrint('createHrExpense vals=$vals error=${data['error']}');
+        return OdooActionResult(id: null, error: errMsg);
+      }
+      final newId = _parseOdooCreateId(data['result']);
+      if (newId != null && newId > 0) {
+        return OdooActionResult(id: newId, error: null);
+      }
+      return OdooActionResult(id: null, error: 'Unexpected create response');
+    } catch (e, st) {
+      debugPrint('createHrExpense: $e\n$st');
+      return OdooActionResult(id: null, error: e.toString());
+    }
+  }
+  Future<String?> deleteMyHrExpense(int expenseId) async {
+    if (!await checkAndLoadUserCredentials() || _userId == null) {
+      return 'Not signed in';
+    }
+    if (expenseId <= 0) return 'Invalid expense';
+    try {
+      final uid = int.parse(_userId!);
+      const headers = {'Content-Type': 'application/json'};
+
+      final empResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.employee',
+              'search_read',
+              [
+                [
+                  ['user_id', '=', uid]
+                ]
+              ],
+              {
+                'fields': ['id'],
+                'limit': 1
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (empResp.statusCode != 200) return 'Could not verify employee';
+      final empData = json.decode(empResp.body);
+      if (empData['error'] != null) {
+        return _odooRpcErrorMessage(empData['error']) ??
+            'Employee lookup failed';
+      }
+      final empRows =
+          empData['result'] is List ? empData['result'] as List : <dynamic>[];
+      if (empRows.isEmpty) return 'No employee linked to your user';
+      final empRow = empRows.first;
+      if (empRow is! Map) return 'Invalid employee';
+      final employeeId = empRow['id'] is int
+          ? empRow['id'] as int
+          : int.tryParse(empRow['id']?.toString() ?? '0') ?? 0;
+      if (employeeId <= 0) return 'Invalid employee id';
+
+      final expResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.expense',
+              'search_read',
+              [
+                [
+                  ['id', '=', expenseId],
+                  ['employee_id', '=', employeeId],
+                ],
+              ],
+              {
+                'fields': ['id'],
+                'limit': 1
+              },
+            ],
+          },
+          'id': 2,
+        }),
+      );
+      if (expResp.statusCode != 200) return 'Could not load expense';
+      final expData = json.decode(expResp.body);
+      if (expData['error'] != null) {
+        return _odooRpcErrorMessage(expData['error']) ??
+            'Expense lookup failed';
+      }
+      final expRows =
+          expData['result'] is List ? expData['result'] as List : <dynamic>[];
+      if (expRows.isEmpty) {
+        return 'Expense not found or you cannot delete it';
+      }
+
+      final delResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'hr.expense',
+              'unlink',
+              [
+                [expenseId]
+              ],
+            ],
+          },
+          'id': 3,
+        }),
+      );
+      if (delResp.statusCode != 200)
+        return 'Delete failed (HTTP ${delResp.statusCode})';
+      final delData = json.decode(delResp.body);
+      if (delData['error'] != null) {
+        return _odooRpcErrorMessage(delData['error']) ?? 'Delete failed';
+      }
+      return null;
+    } catch (e, st) {
+      debugPrint('deleteMyHrExpense: $e\n$st');
+      return e.toString();
+    }
+  }
+  /// Default company on [res.users] (for expense product domain).
+  Future<int?> _readCurrentUserCompanyId() async {
+    if (_userId == null || _password == null) return null;
+    try {
+      final uid = int.parse(_userId!);
+      const headers = _expenseRpcHeaders;
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'res.users',
+              'read',
+              [
+                [uid]
+              ],
+              {
+                'fields': ['company_id']
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200) return null;
+      final data = json.decode(resp.body);
+      if (data['error'] != null || data['result'] is! List) return null;
+      final rows = data['result'] as List;
+      if (rows.isEmpty || rows.first is! Map) return null;
+      final cid = (rows.first as Map)['company_id'];
+      if (cid is List && cid.isNotEmpty && cid[0] != false && cid[0] != null) {
+        final id = cid[0];
+        if (id is int) return id;
+        return int.tryParse(id.toString());
+      }
+      return null;
+    } catch (e) {
+      debugPrint('_readCurrentUserCompanyId: $e');
+      return null;
+    }
+  }
+
+  /// Expense [product_id] options: same rules as Odoo `hr.expense` form — `can_be_expensed`,
+  /// and company is empty or matches current user's company (see `product.product` domain on expense).
+  Future<List<Map<String, dynamic>>> fetchExpenseProductList() async {
+    final list = <Map<String, dynamic>>[];
+    final ok = await checkAndLoadUserCredentials();
+    if (!ok || _userId == null) return list;
+    try {
+      final uid = int.parse(_userId!);
+      const headers = _expenseRpcHeaders;
+      final companyId = await _readCurrentUserCompanyId();
+
+      /// Returns `null` if Odoo rejected the domain (try next); non-null list = use as result.
+      Future<List<dynamic>?> searchWithDomain(
+          List<dynamic> domain, List<String> fields) async {
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: headers,
+          body: json.encode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'product.product',
+                'search_read',
+                [domain],
+                {
+                  'fields': fields,
+                  'limit': 500,
+                  'order': 'name asc',
+                },
+              ],
+            },
+            'id': 1,
+          }),
+        );
+        if (resp.statusCode != 200) return null;
+        final data = json.decode(resp.body);
+        if (data['error'] != null) {
+          debugPrint(
+              'fetchExpenseProductList domain=$domain fields=$fields → ${data['error']}');
+          return null;
+        }
+        return data['result'] is List ? data['result'] as List : <dynamic>[];
+      }
+
+      final domains = <List<dynamic>>[];
+      if (companyId != null) {
+        domains.add([
+          '&',
+          '&',
+          ['active', '=', true],
+          ['can_be_expensed', '=', true],
+          '|',
+          ['company_id', '=', false],
+          ['company_id', '=', companyId],
+        ]);
+      }
+      domains.add([
+        '&',
+        ['active', '=', true],
+        ['can_be_expensed', '=', true],
+      ]);
+      if (companyId != null) {
+        domains.add([
+          '&',
+          ['active', '=', true],
+          '|',
+          ['company_id', '=', false],
+          ['company_id', '=', companyId],
+        ]);
+      }
+      domains.add([
+        ['active', '=', true],
+      ]);
+
+      List<dynamic>? result;
+      final fieldSets = <List<String>>[
+        ['id', 'name', 'display_name', 'standard_price', 'expense_unit_amount', 'list_price'],
+        ['id', 'name', 'standard_price'],
+        ['id', 'name', 'display_name'],
+        ['id', 'name'],
+      ];
+      outer:
+      for (final d in domains) {
+        for (final fields in fieldSets) {
+          result = await searchWithDomain(d, fields);
+          if (result != null) break outer;
+        }
+      }
+      if (result == null) return list;
+
+      for (final e in result) {
+        if (e is Map && e['id'] != null) {
+          final id = e['id'] is int
+              ? e['id'] as int
+              : int.tryParse(e['id']?.toString() ?? '0') ?? 0;
+          if (id <= 0) continue;
+          final dn = e['display_name']?.toString().trim();
+          final nm = e['name']?.toString().trim();
+          final label = (dn != null && dn.isNotEmpty) ? dn : (nm ?? '');
+          final rawPrice = e['standard_price'];
+          final standardPrice = rawPrice is num
+              ? rawPrice.toDouble()
+              : double.tryParse(rawPrice?.toString() ?? '') ?? 0.0;
+          final rawExpenseAmt = e['expense_unit_amount'];
+          final expenseUnitAmount = rawExpenseAmt is num
+              ? rawExpenseAmt.toDouble()
+              : double.tryParse(rawExpenseAmt?.toString() ?? '') ?? 0.0;
+          final rawList = e['list_price'];
+          final listPrice = rawList is num
+              ? rawList.toDouble()
+              : double.tryParse(rawList?.toString() ?? '') ?? 0.0;
+          list.add({
+            'id': id,
+            'name': label,
+            'standard_price': standardPrice,
+            if (expenseUnitAmount > 0) 'expense_unit_amount': expenseUnitAmount,
+            if (listPrice > 0) 'list_price': listPrice,
+          });
+        }
+      }
+      return list;
+    } catch (e) {
+      debugPrint('fetchExpenseProductList: $e');
+      return list;
+    }
+  }
+
+  /// Fetch project list for expense dropdown (project.project). Returns [{id, name}, ...].
+  /// Fetch customer/project list for expense dropdown (hr.expenses.customer).
+  /// Mapped to the `project_customer` field on hr.expense.
+  Future<List<Map<String, dynamic>>> fetchExpenseProjectList() async {
+    return _fetchExpenseSimpleList(
+        'hr.expenses.customer', 'fetchExpenseProjectList');
+  }
+
+  /// Fetch sales-order list for expense dropdown (hr.expenses.project).
+  /// Mapped to the `project_so_no` field on hr.expense.
+  Future<List<Map<String, dynamic>>> fetchExpenseProjectSalesOrderList() async {
+    return _fetchExpenseSimpleList(
+        'hr.expenses.project', 'fetchExpenseProjectSalesOrderList');
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchExpenseSimpleList(
+      String model, String debugTag) async {
+    final list = <Map<String, dynamic>>[];
+    final ok = await checkAndLoadUserCredentials();
+    if (!ok || _userId == null) return list;
+    try {
+      final uid = int.parse(_userId!);
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              model,
+              'search_read',
+              [[]],
+              {
+                'fields': ['id', 'name'],
+                'order': 'name asc',
+                'limit': 500,
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200) return list;
+      final data = json.decode(resp.body);
+      if (data['error'] != null) {
+        debugPrint('$debugTag: ${data['error']}');
+        return list;
+      }
+      final result =
+          data['result'] is List ? data['result'] as List : <dynamic>[];
+      for (final e in result) {
+        if (e is Map && e['id'] != null) {
+          list.add({
+            'id': e['id'] is int
+                ? e['id'] as int
+                : int.tryParse(e['id']?.toString() ?? '0') ?? 0,
+            'name': e['name']?.toString() ?? '',
+          });
+        }
+      }
+      return list;
+    } catch (e) {
+      debugPrint('$debugTag: $e');
+      return list;
+    }
+  }
+
+  /// Fetch tax list for expense (account.tax). Returns [{id, name}, ...].
+  Future<List<Map<String, dynamic>>> fetchExpenseTaxList() async {
+    final list = <Map<String, dynamic>>[];
+    final ok = await checkAndLoadUserCredentials();
+    if (!ok || _userId == null) return list;
+    try {
+      final uid = int.parse(_userId!);
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'account.tax',
+              'search_read',
+              [
+                [
+                  ['active', '=', true],
+                  [
+                    'type_tax_use',
+                    'in',
+                    ['purchase', 'all']
+                  ],
+                ]
+              ],
+              {
+                'fields': ['id', 'name'],
+                'order': 'name asc',
+                'limit': 200,
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200) return list;
+      final data = json.decode(resp.body);
+      if (data['error'] != null) {
+        debugPrint('fetchExpenseTaxList: ${data['error']}');
+        return list;
+      }
+      final result =
+          data['result'] is List ? data['result'] as List : <dynamic>[];
+      for (final e in result) {
+        if (e is Map && e['id'] != null) {
+          list.add({
+            'id': e['id'] is int
+                ? e['id'] as int
+                : int.tryParse(e['id']?.toString() ?? '0') ?? 0,
+            'name': e['name']?.toString() ?? '',
+          });
+        }
+      }
+      return list;
+    } catch (e) {
+      debugPrint('fetchExpenseTaxList: \$e');
+      return list;
+    }
+  }
+  Future<List<Map<String, dynamic>>> getExpenseAttachments(
+      int expenseId) async {
+    try {
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok || _userId == null || _password == null) return [];
+      final uid = int.parse(_userId!);
+      const headers = _expenseRpcHeaders;
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: jsonEncode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'ir.attachment',
+              'search_read',
+              [
+                [
+                  ['res_model', '=', 'hr.expense'],
+                  ['res_id', '=', expenseId],
+                ]
+              ],
+              {
+                'fields': ['id', 'name', 'mimetype']
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200) return [];
+      final data = jsonDecode(resp.body);
+      if (data['error'] != null || data['result'] == null) return [];
+      final list =
+          data['result'] is List ? data['result'] as List : <dynamic>[];
+      return list
+          .map((e) => {
+                'id': e['id'] is int
+                    ? e['id'] as int
+                    : int.tryParse(e['id']?.toString() ?? '0'),
+                'name': e['name']?.toString() ?? 'file',
+                'mimetype': e['mimetype']?.toString() ?? '',
+              })
+          .where((m) => (m['id'] as int) > 0)
+          .toList();
+    } catch (e) {
+      debugPrint('getExpenseAttachments: $e');
+      return [];
+    }
+  }
+
+  /// Upload one attachment to [hr.expense] via [ir.attachment] and link by [res_model]/[res_id].
+  /// Returns `null` on success, or an error string.
+  Future<String?> uploadExpenseAttachment({
+    required int expenseId,
+    required String fileName,
+    required Uint8List bytes,
+    String? mimeType,
+  }) async {
+    try {
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok || _userId == null || _password == null) return 'Not signed in';
+      final uid = int.parse(_userId!);
+      const headers = _expenseRpcHeaders;
+      final encoded = base64Encode(bytes);
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: jsonEncode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'ir.attachment',
+              'create',
+              [
+                {
+                  'name': fileName,
+                  'type': 'binary',
+                  'datas': encoded,
+                  'res_model': 'hr.expense',
+                  'res_id': expenseId,
+                  if (mimeType != null && mimeType.trim().isNotEmpty)
+                    'mimetype': mimeType.trim(),
+                }
+              ],
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200)
+        return 'Upload failed (HTTP ${resp.statusCode})';
+      final data = jsonDecode(resp.body);
+      if (data['error'] != null) {
+        return _odooRpcErrorMessage(data['error']) ?? 'Upload failed';
+      }
+      return null;
+    } catch (e) {
+      debugPrint('uploadExpenseAttachment: $e');
+      return e.toString();
+    }
+  }
+
+  /// Replace one expense attachment with a new file.
+  Future<String?> replaceExpenseAttachment({
+    required int attachmentId,
+    required String fileName,
+    required Uint8List bytes,
+    String? mimeType,
+  }) async {
+    try {
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok || _userId == null || _password == null) return 'Not signed in';
+      final trimmed = fileName.trim();
+      if (trimmed.isEmpty) return 'File name is required';
+      final uid = int.parse(_userId!);
+      const headers = _expenseRpcHeaders;
+      final encoded = base64Encode(bytes);
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: jsonEncode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'ir.attachment',
+              'write',
+              [
+                [attachmentId],
+                {
+                  'name': trimmed,
+                  'datas_fname': trimmed,
+                  'datas': encoded,
+                  if (mimeType != null && mimeType.trim().isNotEmpty)
+                    'mimetype': mimeType.trim(),
+                },
+              ],
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200)
+        return 'Replace failed (HTTP ${resp.statusCode})';
+      final data = jsonDecode(resp.body);
+      if (data['error'] != null) {
+        return _odooRpcErrorMessage(data['error']) ?? 'Replace failed';
+      }
+      return null;
+    } catch (e) {
+      debugPrint('replaceExpenseAttachment: $e');
+      return e.toString();
+    }
+  }
+
+  /// Delete one expense attachment.
+  Future<String?> deleteExpenseAttachment(int attachmentId) async {
+    try {
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok || _userId == null || _password == null) return 'Not signed in';
+      final uid = int.parse(_userId!);
+      const headers = _expenseRpcHeaders;
+      final resp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers,
+        body: jsonEncode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'ir.attachment',
+              'unlink',
+              [
+                [attachmentId],
+              ],
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (resp.statusCode != 200)
+        return 'Delete failed (HTTP ${resp.statusCode})';
+      final data = jsonDecode(resp.body);
+      if (data['error'] != null) {
+        return _odooRpcErrorMessage(data['error']) ?? 'Delete failed';
+      }
+      return null;
+    } catch (e) {
+      debugPrint('deleteExpenseAttachment: $e');
+      return e.toString();
+    }
+  }
+
+  static bool _looksLikeHtml(Uint8List b) {
+    if (b.length < 4) return false;
+    if (b[0] != 0x3C) return false; // '<'
+    if (b[1] == 0x21 || b[1] == 0x3F) return true; // '<!' or '<?'
+    if (b.length >= 5 &&
+        b[1] == 0x68 &&
+        b[2] == 0x74 &&
+        b[3] == 0x6D &&
+        b[4] == 0x6C) return true; // 'html'
+    return false;
+  }
+
+  /// Headers for GET /web/content – Cookie only (no Content-Type). Matches PMform/OKR approach.
+  Future<Map<String, String>> _expenseAttachmentGetHeaders(
+      {bool forceRefresh = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (forceRefresh) {
+      await _ensureWebSession(force: true);
+    }
+    String? cookie = prefs.getString('session_id');
+    final sessId = prefs.getString('sessionId') ?? '';
+    if ((cookie == null || cookie.isEmpty) && sessId.isNotEmpty)
+      cookie = 'session_id=$sessId';
+    if ((cookie == null || cookie.isEmpty) && !forceRefresh) {
+      await checkAndLoadUserCredentials();
+      final refreshed = await SharedPreferences.getInstance();
+      cookie = refreshed.getString('session_id');
+      final rs = refreshed.getString('sessionId') ?? '';
+      if ((cookie == null || cookie.isEmpty) && rs.isNotEmpty)
+        cookie = 'session_id=$rs';
+    }
+    return {if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie};
+  }
+
+  /// Download expense attachment as raw bytes. Tries /web/content then JSON-RPC. Returns null if response looks like HTML or fails.
+  Future<Uint8List?> getExpenseAttachmentBytes(
+      int attachmentId, String fileName) async {
+    try {
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok) return null;
+      final encodedName = Uri.encodeComponent(
+          fileName.trim().isEmpty ? 'attachment' : fileName.trim());
+      final dbSuffix = database.isNotEmpty ? '&db=$database' : '';
+      final dbPrefix = database.isNotEmpty ? '?db=$database' : '';
+      final prefs = await SharedPreferences.getInstance();
+      final sessId = prefs.getString('sessionId') ?? '';
+      final sessParam =
+          sessId.isNotEmpty ? '&session_id=${Uri.encodeComponent(sessId)}' : '';
+      final candidates = <String>[
+        '$baseUrl/web/content/$attachmentId?download=1&filename=$encodedName$dbSuffix$sessParam',
+        '$baseUrl/web/content/$attachmentId/$encodedName?download=1$dbSuffix$sessParam',
+        '$baseUrl/web/content/$attachmentId?download=1$dbSuffix$sessParam',
+        '$baseUrl/web/content/$attachmentId$dbPrefix$sessParam',
+        '$baseUrl/web/content/$attachmentId?download=1&filename=$encodedName$dbSuffix',
+        '$baseUrl/web/content/$attachmentId/$encodedName?download=1$dbSuffix',
+        '$baseUrl/web/content/$attachmentId?download=1$dbSuffix',
+        '$baseUrl/web/content/$attachmentId$dbPrefix',
+      ];
+
+      // Use Cookie-only headers for GET (no Content-Type) – /web/content may reject GET with application/json
+      Future<Uint8List?> tryWithHeaders(Map<String, String> headers) async {
+        for (final url in candidates) {
+          final resp = await http.get(Uri.parse(url), headers: headers);
+          final contentType = resp.headers['content-type']?.toLowerCase() ?? '';
+          if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) continue;
+          if (contentType.contains('text/html') ||
+              _looksLikeHtml(resp.bodyBytes)) continue;
+          return resp.bodyBytes;
+        }
+        return null;
+      }
+
+      Uint8List? result =
+          await tryWithHeaders(await _expenseAttachmentGetHeaders());
+      if (result != null) return result;
+      // Retry with forced session refresh (PMform pattern)
+      result = await tryWithHeaders(
+          await _expenseAttachmentGetHeaders(forceRefresh: true));
+      if (result != null) return result;
+      // Fallback: JSON-RPC read datas
+      if (_userId == null || _password == null) return null;
+      final uid = int.parse(_userId!);
+      final headers2 = await _odooHeaders();
+      final rpcResp = await http.post(
+        Uri.parse(jsonRpcUrl),
+        headers: headers2,
+        body: jsonEncode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': {
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              database,
+              uid,
+              _password,
+              'ir.attachment',
+              'search_read',
+              [
+                [
+                  ['id', '=', attachmentId]
+                ]
+              ],
+              {
+                'fields': ['datas']
+              },
+            ],
+          },
+          'id': 1,
+        }),
+      );
+      if (rpcResp.statusCode != 200) return null;
+      final data = jsonDecode(rpcResp.body);
+      if (data['error'] != null || data['result'] == null) return null;
+      final list =
+          data['result'] is List ? data['result'] as List : <dynamic>[];
+      if (list.isEmpty) return null;
+      final att = list[0];
+      if (att is! Map) return null;
+      final datas = att['datas'];
+      if (datas == null || datas is! String) return null;
+      return base64Decode(datas);
+    } catch (e) {
+      debugPrint('getExpenseAttachmentBytes: $e');
+      return null;
+    }
+  }
+
+  /// Download expense (or any) attachment. Tries /web/content first (works with filestore), then JSON-RPC datas.
+  /// Returns local file path or null on failure.
+  Future<String?> getExpenseAttachmentFile(
+      int attachmentId, String fileName) async {
+    try {
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok) return null;
+      final encodedName = Uri.encodeComponent(
+          fileName.trim().isEmpty ? 'attachment' : fileName.trim());
+      final dbSuffix = database.isNotEmpty ? '&db=$database' : '';
+      final dbPrefix = database.isNotEmpty ? '?db=$database' : '';
+      final candidates = <String>[
+        '$baseUrl/web/content/$attachmentId?download=1&filename=$encodedName$dbSuffix',
+        '$baseUrl/web/content/$attachmentId/$encodedName?download=1$dbSuffix',
+        '$baseUrl/web/content/$attachmentId?download=1$dbSuffix',
+        '$baseUrl/web/content/$attachmentId$dbPrefix',
+      ];
+      Future<String?> tryWithHeaders(Map<String, String> headers) async {
+        for (final url in candidates) {
+          final resp = await http.get(Uri.parse(url), headers: headers);
+          final contentType = resp.headers['content-type']?.toLowerCase() ?? '';
+          if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) continue;
+          if (contentType.contains('text/html') ||
+              _looksLikeHtml(resp.bodyBytes)) continue;
+          final ext = fileName.contains('.') ? fileName.split('.').last : 'bin';
+          final safeExt = ext.length > 10 ? 'bin' : ext;
+          final file = File(
+              '${Directory.systemTemp.path}/exp_att_${attachmentId}_${DateTime.now().millisecondsSinceEpoch}.$safeExt');
+          await file.writeAsBytes(resp.bodyBytes, flush: true);
+          return file.path;
+        }
+        return null;
+      }
+
+      String? path = await tryWithHeaders(await _expenseAttachmentGetHeaders());
+      if (path != null) return path;
+      path = await tryWithHeaders(
+          await _expenseAttachmentGetHeaders(forceRefresh: true));
+      if (path != null) return path;
+      return null;
+    } catch (e) {
+      debugPrint('getExpenseAttachmentFile: $e');
+      return null;
+    }
+  }
+
+  Future<String?> fetchExpenseSheetReportPdf(int reportId,
+      {bool preferSigma = true}) async {
+    return null;
+  }
+
+  /// Products for Inventory (name, price, on hand, optional thumbnail).
+  /// Each map: `id`, `name`, `list_price`, `qty_available`, `uom`, `image_base64`.
+  Future<List<Map<String, dynamic>>> fetchInventoryProductList() async {
+    try {
+      final ok = await checkAndLoadUserCredentials();
+      if (!ok || _userId == null || _password == null) return [];
+      final uid = int.parse(_userId!);
+      const headers = _expenseRpcHeaders;
+
+      String m2o(dynamic v) {
+        if (v is List && v.length > 1) return v[1]?.toString() ?? '';
+        return '';
+      }
+
+      Future<List<Map<String, dynamic>>?> tryFields(
+          List<String> fields, List<dynamic> domain) async {
+        final resp = await http.post(
+          Uri.parse(jsonRpcUrl),
+          headers: headers,
+          body: jsonEncode({
+            'jsonrpc': '2.0',
+            'method': 'call',
+            'params': {
+              'service': 'object',
+              'method': 'execute_kw',
+              'args': [
+                database,
+                uid,
+                _password,
+                'product.product',
+                'search_read',
+                [domain],
+                {
+                  'fields': fields,
+                  'limit': 5000,
+                  'order': 'name asc',
+                },
+              ],
+            },
+            'id': 1,
+          }),
+        );
+        if (resp.statusCode != 200) return null;
+        final data = jsonDecode(resp.body);
+        if (data['error'] != null) {
+          debugPrint(
+              '⚠️ fetchInventoryProductList fields=$fields → ${data['error']}');
+          return null;
+        }
+        final list =
+            data['result'] is List ? data['result'] as List : <dynamic>[];
+        final out = <Map<String, dynamic>>[];
+        for (final e in list) {
+          if (e is! Map) continue;
+          final id = e['id'];
+          dynamic img = e['image_128'];
+          if (img == false || img == null) img = e['image_256'];
+          String? imgStr;
+          if (img is String && img.isNotEmpty) imgStr = img;
+          final priceRaw = e['list_price'] ?? e['lst_price'];
+          final qty = e['qty_available'];
+          final pid = id is int ? id : int.tryParse(id?.toString() ?? '');
+          out.add({
+            'id': pid,
+            'name': (e['display_name'] ?? e['name'] ?? '—').toString(),
+            'list_price': priceRaw is num
+                ? priceRaw.toDouble()
+                : double.tryParse(priceRaw?.toString() ?? '') ?? 0.0,
+            'qty_available': qty is num
+                ? qty.toDouble()
+                : double.tryParse(qty?.toString() ?? '') ?? 0.0,
+            'uom': m2o(e['uom_id']),
+            'image_base64': imgStr,
+          });
+        }
+        return out;
+      }
+
+      final domains = <List<dynamic>>[
+        [
+          ['active', '=', true],
+          ['type', '=', 'product'],
+        ],
+        [
+          ['active', '=', true],
+        ],
+      ];
+
+      final fieldSets = <List<String>>[
+        [
+          'name',
+          'display_name',
+          'list_price',
+          'lst_price',
+          'qty_available',
+          'uom_id',
+          'image_128',
+        ],
+        [
+          'name',
+          'list_price',
+          'lst_price',
+          'qty_available',
+          'uom_id',
+          'image_128',
+        ],
+        ['name', 'list_price', 'qty_available', 'uom_id'],
+        ['name', 'qty_available', 'uom_id'],
+        ['name', 'qty_available'],
+        ['name'],
+      ];
+
+      for (final domain in domains) {
+        for (final fields in fieldSets) {
+          final r = await tryFields(fields, domain);
+          if (r != null) {
+            debugPrint('✅ fetchInventoryProductList: ${r.length} products');
+            return r;
+          }
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('❌ fetchInventoryProductList: $e');
+      return [];
+    }
+  }
 }
 
 // Project model class
@@ -4034,7 +7495,12 @@ class Project {
       duration: json['duration'] is String ? json['duration'] : '',
       warranty: json['warranty'] != null ? json['warranty'].toString() : '',
       taskCount: json['task_count'] is int ? json['task_count'] : 0,
-      stageName: json['stage_id'] != null && json['stage_id'] is List ? json['stage_id'][1] : null,
+      stageName: json['stage_id'] != null && json['stage_id'] is List
+          ? json['stage_id'][1] as String?
+          : (json['last_update_status'] != null &&
+                  json['last_update_status'] != false
+              ? json['last_update_status'].toString()
+              : null),
       color: json['color'] is int ? json['color'] : 0,
       isFavorite: json['is_favorite'] is bool ? json['is_favorite'] : false,
       userImage: json['user_image'] is String ? json['user_image'] : '',

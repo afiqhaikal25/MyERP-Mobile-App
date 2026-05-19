@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../odoo_service.dart';
 import 'taskproject.dart';
 
@@ -55,24 +56,45 @@ class _ProjectPageState extends State<ProjectPage> {
       });
 
       print("🔍 Fetching projects...");
-      
-      final odooService = OdooService();
-      final userId = await odooService.authenticate(widget.email, widget.password);
-      
-      if (userId == null) {
-        throw Exception('Authentication failed');
+
+      final prefs = await SharedPreferences.getInstance();
+      final email = prefs.getString('user_email') ??
+          prefs.getString('email') ??
+          widget.email;
+      final password = prefs.getString('user_password') ??
+          prefs.getString('password') ??
+          widget.password;
+
+      if (email.isEmpty || password.isEmpty) {
+        throw Exception('Tiada e-mel atau kata laluan untuk log masuk Odoo.');
       }
 
-      print("✅ Authenticated successfully, fetching projects for user ID: $userId...");
+      final odooService = OdooService();
+      var authed = await odooService.checkAndLoadUserCredentials();
+      if (!authed) {
+        final userId = await odooService.authenticate(email, password);
+        authed = userId != null;
+      }
+      if (!authed) {
+        throw Exception('Gagal log masuk ke myerp.com.my — semak e-mel dan kata laluan.');
+      }
+
+      print("✅ Session OK, fetching projects...");
 
       final projects = await odooService.fetchProjects();
-      
+      final err = odooService.lastErrorMessage;
+
+      if (!mounted) return;
       setState(() {
         _projects = projects;
         _isLoading = false;
+        if (projects.isEmpty && (err?.isNotEmpty ?? false)) {
+          _errorMessage = err!;
+        }
       });
 
-      print("✅ Projects fetched successfully: ${projects.length} projects assigned to current user");
+      print(
+          "✅ Projects loaded: ${projects.length} (Odoo: https://myerp.com.my/)");
     } catch (e) {
       print("❌ Error fetching projects: $e");
       setState(() {
@@ -865,184 +887,196 @@ class _ProjectPageState extends State<ProjectPage> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final backgroundImage = isDarkMode ? 'images/woodb.png' : 'images/wood.png';
-    
+    const brand = Color(0xFF282454);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            const SizedBox(width: 0),
-            Transform.translate(
-              offset: const Offset(-15, 0),
-              child: const Text(
-                'Projects',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-          ],
-        ),
-        centerTitle: false,
-        backgroundColor: isDarkMode ? Colors.black : const Color(0xFF282454),
-        foregroundColor: Colors.white,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 8.0),
-          child: IconButton(
-            icon: const Icon(Icons.grid_view, color: Colors.white),
-            onPressed: () {
-              Navigator.popUntil(context, (route) => route.isFirst);
-            },
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showAddProjectDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchProjects,
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage(backgroundImage),
-            fit: BoxFit.cover,
-          ),
-        ),
-        child: Column(
+      backgroundColor: Colors.white,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search projects...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                          });
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white.withOpacity(0.9),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
-            ),
-          ),
-          
-          // Category filter chips
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: SizedBox(
-              height: 40,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _categories.length,
-                itemBuilder: (context, index) {
-                  final category = _categories[index];
-                  final isSelected = _selectedCategory == category['value'];
-                  
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: FilterChip(
-                      label: Text(
-                        category['label']!,
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : (isDarkMode ? Colors.white70 : Colors.black87),
-                          fontSize: 12,
-                        ),
-                      ),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        setState(() {
-                          _selectedCategory = category['value']!;
-                        });
-                      },
-                      backgroundColor: isDarkMode ? Colors.black.withOpacity(0.8) : Colors.white.withOpacity(0.9),
-                      selectedColor: isDarkMode ? Colors.black : const Color(0xFF282454),
-                      checkmarkColor: Colors.white,
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.grid_view, color: brand),
+                    onPressed: () {
+                      Navigator.popUntil(context, (route) => route.isFirst);
+                    },
+                    tooltip: 'Home',
+                  ),
+                  const Text(
+                    'Projects',
+                    style: TextStyle(
+                      color: brand,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
                     ),
-                  );
-                },
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.add, color: brand),
+                    tooltip: 'Add project',
+                    onPressed: _showAddProjectDialog,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: brand),
+                    tooltip: 'Refresh',
+                    onPressed: _fetchProjects,
+                  ),
+                ],
               ),
             ),
           ),
-          
-          const SizedBox(height: 8),
-          
-          // Content
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage.isNotEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.error, size: 64, color: Colors.red),
-                            const SizedBox(height: 16),
-                            Text(
-                              _errorMessage,
-                              style: const TextStyle(fontSize: 16),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _fetchProjects,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _filteredProjects.isEmpty
-                        ? const Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.folder_open, size: 64, color: Colors.grey),
-                                SizedBox(height: 16),
-                                Text(
-                                  'No projects assigned to you',
-                                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _fetchProjects,
-                            child: ListView.builder(
-                              itemCount: _filteredProjects.length,
-                              itemBuilder: (context, index) {
-                                final project = _filteredProjects[index];
-                                return _buildProjectCard(project, isDarkMode);
+            child: Column(
+              children: [
+                // Search bar
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search projects...',
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: isDarkMode ? Colors.black54 : Colors.grey,
+                      ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                });
                               },
+                            )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      filled: true,
+                      fillColor:
+                          isDarkMode ? Colors.grey.shade200 : Colors.grey.shade50,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                    },
+                  ),
+                ),
+
+                // Category filter chips
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: SizedBox(
+                    height: 40,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _categories.length,
+                      itemBuilder: (context, index) {
+                        final category = _categories[index];
+                        final isSelected =
+                            _selectedCategory == category['value'];
+
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: FilterChip(
+                            label: Text(
+                              category['label']!,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : Colors.black87,
+                                fontSize: 12,
+                              ),
                             ),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedCategory = category['value']!;
+                              });
+                            },
+                            backgroundColor: isDarkMode
+                                ? Colors.grey.shade300
+                                : Colors.grey.shade200,
+                            selectedColor: brand,
+                            checkmarkColor: Colors.white,
                           ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Content
+                Expanded(
+                  child: _isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: brand,
+                          ),
+                        )
+                      : _errorMessage.isNotEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.error,
+                                      size: 64, color: Colors.red),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _errorMessage,
+                                    style: const TextStyle(fontSize: 16),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton(
+                                    onPressed: _fetchProjects,
+                                    child: const Text('Retry'),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _filteredProjects.isEmpty
+                              ? const Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.folder_open,
+                                          size: 64, color: Colors.grey),
+                                      SizedBox(height: 16),
+                                      Text(
+                                        'No projects assigned to you',
+                                        style: TextStyle(
+                                            fontSize: 16, color: Colors.grey),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : RefreshIndicator(
+                                  color: brand,
+                                  onRefresh: _fetchProjects,
+                                  child: ListView.builder(
+                                    itemCount: _filteredProjects.length,
+                                    itemBuilder: (context, index) {
+                                      final project = _filteredProjects[index];
+                                      return _buildProjectCard(
+                                          project, isDarkMode);
+                                    },
+                                  ),
+                                ),
+                ),
+              ],
+            ),
           ),
         ],
-        ),
       ),
     );
   }

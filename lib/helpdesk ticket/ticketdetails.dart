@@ -295,59 +295,68 @@ Future<void> _fetchCheckOutFromOdoo() async {
 
   @override
   Widget build(BuildContext context) {
+    final ticketTitle =
+        (widget.ticket['ticket_number_display'] ?? widget.ticket['name'] ?? 'Ticket Details')
+            .toString();
+    final topBarForeground =
+        widget.isDarkMode ? Colors.black87 : const Color(0xFF282454);
+
     return Scaffold(
-      backgroundColor: widget.isDarkMode ? Colors.black : Colors.white,
-      appBar: AppBar(
-        backgroundColor: widget.isDarkMode ? Colors.grey[900] : const Color(0xFF282454),
-        elevation: 0,
-        title: Text(
-          (widget.ticket['ticket_number_display'] ?? widget.ticket['name'] ?? "Ticket Details").toString(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Color(0xFF25D366)),
-            tooltip: 'WhatsApp',
-            onPressed: _openWhatsAppChat,
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              widget.isDarkMode ? 'images/woodb.png' : 'images/wood.png',
-              fit: BoxFit.cover,
-            ),
-          ),
-          Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        _buildTicketInfoCard(),
-                        const SizedBox(height: 16),
-                        _buildLocationButton(),
-                        const SizedBox(height: 16),
-                        _buildCheckInOrUpdateButton(),
-                      ],
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.arrow_back, color: topBarForeground),
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  Expanded(
+                    child: Text(
+                      ticketTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: topBarForeground,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
+                  ),
+                  IconButton(
+                    icon: const FaIcon(
+                      FontAwesomeIcons.whatsapp,
+                      color: Color(0xFF25D366),
+                    ),
+                    tooltip: 'WhatsApp',
+                    onPressed: _openWhatsAppChat,
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: Column(
+                    children: [
+                      _buildTicketInfoCard(),
+                      const SizedBox(height: 16),
+                      _buildLocationButton(),
+                      const SizedBox(height: 16),
+                      _buildCheckInOrUpdateButton(),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1147,6 +1156,31 @@ Future<void> _fetchCheckOutFromOdoo() async {
   );
 }
 
+Widget _buildCheckInWithoutGeoButton() {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    child: ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF46BBFE),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      onPressed: _handleCheckInWithoutGeo,
+      child: const Text(
+        'Check In With Geo',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+    ),
+  );
+}
+
 Widget _buildUpdateProgressButton() {
   return Container(
     width: double.infinity,
@@ -1181,26 +1215,42 @@ Widget _buildCheckInOrUpdateButton() {
   }
 
   if (widget.ticket['stage_name'].toString().toLowerCase().contains('closed')) {
-    if (_isFeedbackGiven) {
-      return const SizedBox.shrink();
-    }
+    return Column(
+      children: [
+        _buildFeedbackActionButtons(),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF282454),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
+  return Column(
+    children: [
+      if (!isCheckedIn) ...[
+        _buildCheckInButton(),
+        _buildCheckInWithoutGeoButton(),
+      ],
+      if (isCheckedIn && !isCheckoutComplete) _buildUpdateProgressButton(),
+      if (isCheckoutComplete && !widget.ticket['stage_name'].toString().toLowerCase().contains('closed'))
+        _buildCloseTicketButton(widget.ticket['id']),
+      _buildFeedbackActionButtons(),
+      const SizedBox(height: 16),
+    ],
+  );
+}
+
+Widget _buildFeedbackActionButtons() {
+  return Column(
+    children: [
+      _buildFeedbackNavButton(
+        label: 'Feedback',
+        backgroundColor: const Color(0xFF46BBFE),
         onPressed: () async {
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => FeedbackScreen(ticketId: widget.ticket['id'].toString()),
+              builder: (context) => FeedbackScreen(
+                ticketId: widget.ticket['id'].toString(),
+              ),
             ),
           );
 
@@ -1208,34 +1258,54 @@ Widget _buildCheckInOrUpdateButton() {
             await Future.delayed(const Duration(milliseconds: 300));
             await _refreshTicketFromOdoo();
             widget.onTicketUpdated?.call();
-            setState(() {});
+            if (mounted) setState(() {});
           }
-
-          widget.onTicketUpdated?.call();
-          await _refreshTicketFromOdoo();
-          widget.onTicketUpdated?.call();
-          setState(() {});
         },
-        child: const Text(
-          'Give Feedback',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+      ),
+      _buildFeedbackNavButton(
+        label: 'Total Feedback',
+        backgroundColor: const Color(0xFF19543E),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TotalFeedbackScreen(
+                ticketId: widget.ticket['id'],
+              ),
+            ),
+          );
+        },
+      ),
+    ],
+  );
+}
+
+Widget _buildFeedbackNavButton({
+  required String label,
+  required Color backgroundColor,
+  required VoidCallback onPressed,
+}) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+    child: ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: backgroundColor,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
-    );
-  }
-
-  return Column(
-    children: [
-      if (!isCheckedIn) _buildCheckInButton(),
-      if (isCheckedIn && !isCheckoutComplete) _buildUpdateProgressButton(),
-      if (isCheckoutComplete && !widget.ticket['stage_name'].toString().toLowerCase().contains('closed'))
-        _buildCloseTicketButton(widget.ticket['id']),
-      const SizedBox(height: 16),
-    ],
+      onPressed: onPressed,
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+    ),
   );
 }
 
@@ -1347,10 +1417,18 @@ Future<void> _updateTicketProgress() async {
   List<ProgressStep> allSteps = [...oldSteps];
 
   for (var newStep in ticket.progressSteps) {
-    bool exists = allSteps.any((step) =>
-      step.title == newStep.title &&
-      step.timestamp?.toIso8601String() == newStep.timestamp?.toIso8601String()
-    );
+    final bool exists;
+    if (newStep.title == 'Resolution' || newStep.title == 'Follow Up Added') {
+      exists = allSteps.any((step) =>
+          step.title == newStep.title &&
+          (step.description ?? '').trim() ==
+              (newStep.description ?? '').trim());
+    } else {
+      exists = allSteps.any((step) =>
+          step.title == newStep.title &&
+          step.timestamp?.toIso8601String() ==
+              newStep.timestamp?.toIso8601String());
+    }
     if (!exists) {
       allSteps.add(newStep);
     }
@@ -1386,12 +1464,20 @@ Future<void> _updateTicketProgress() async {
 
 
 
-void _handleCheckIn() async {
+void _handleCheckIn() => _performCheckIn(autoResolutionAfterCheckIn: false);
+
+void _handleCheckInWithoutGeo() => _performCheckIn(autoResolutionAfterCheckIn: true);
+
+Future<void> _performCheckIn({required bool autoResolutionAfterCheckIn}) async {
   final confirm = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Confirm Check-In'),
-      content: const Text('Are you sure you want to check in for this ticket?'),
+      content: Text(
+        autoResolutionAfterCheckIn
+            ? 'Check in without location verification and auto-add ticket problem as resolution?'
+            : 'Are you sure you want to check in for this ticket?',
+      ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
         TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm')),
@@ -1399,97 +1485,140 @@ void _handleCheckIn() async {
     ),
   );
 
-  if (confirm == true) {
-    // 🔹 Hantar Check-In ke Odoo
-    DateTime checkInTime = DateTime.now();
-    String formattedCheckIn = DateFormat('dd/MM/yyyy HH:mm:ss').format(checkInTime);
-    final rootNavigator = Navigator.of(context, rootNavigator: true);
-    _showLoadingDialog('Submitting check-in...');
-    bool success = await widget.odooService.submitCheckIn(widget.ticket['id'], formattedCheckIn);
-    if (mounted) {
-      rootNavigator.pop();
-    }
+  if (confirm != true) return;
 
-    if (success) {
-      // ✅ Simpan Check-In ke SharedPreferences
-      await _saveCheckInStatus(checkInTime);
-
-      // 🔄 Kemaskini UI dengan Check-In sebenar
-      setState(() {
-        isCheckedIn = true;
-        widget.ticket['check_in'] = DateFormat('dd/MM/yyyy HH:mm:ss').format(checkInTime);
-        ticket.checkInTime = checkInTime; // ✅ Pastikan ini dikemaskini
-        ticket.progressSteps.add(
-          ProgressStep(
-            title: 'Technician Check In',
-            timestamp: checkInTime,
-            isCompleted: true,
-            icon: Icons.login,
-          ),
-        );
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Check-in submitted successfully')),
-      );
-
-      _navigateToChecklist(context);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to submit check-in')),
-      );
-    }
+  final checkInTime = DateTime.now();
+  final formattedCheckIn = OdooService.formatOdooApiDateTime(checkInTime);
+  final rootNavigator = Navigator.of(context, rootNavigator: true);
+  _showLoadingDialog('Submitting check-in...');
+  final success = await widget.odooService.submitCheckIn(
+    widget.ticket['id'],
+    formattedCheckIn,
+  );
+  if (mounted) {
+    rootNavigator.pop();
   }
+
+  if (!success) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          widget.odooService.lastErrorMessage ?? 'Failed to submit check-in',
+        ),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+
+  await _saveCheckInStatus(checkInTime);
+
+  final prefs = await SharedPreferences.getInstance();
+  final ticketId = widget.ticket['id'] as int;
+  await prefs.setBool(
+    'auto_resolution_after_checkin_$ticketId',
+    autoResolutionAfterCheckIn,
+  );
+
+  final probName = (widget.ticket['prob_name']?.toString() ?? '').trim();
+
+  setState(() {
+    isCheckedIn = true;
+    widget.ticket['check_in'] =
+        DateFormat('dd/MM/yyyy HH:mm:ss').format(checkInTime);
+    ticket.checkInTime = checkInTime;
+    ticket.progressSteps.add(
+      ProgressStep(
+        title: 'Technician Check In',
+        timestamp: checkInTime,
+        isCompleted: true,
+        icon: Icons.login,
+      ),
+    );
+
+    if (autoResolutionAfterCheckIn && probName.isNotEmpty) {
+      ticket.progressSteps.add(
+        ProgressStep(
+          title: 'Resolution',
+          timestamp: checkInTime.add(const Duration(minutes: 1)),
+          isCompleted: true,
+          icon: Icons.build_circle_outlined,
+          description: probName,
+          resolution: probName,
+        ),
+      );
+    }
+  });
+
+  if (!mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Check-in submitted successfully')),
+  );
+
+  _navigateToChecklist(
+    context,
+    checkInTime: checkInTime,
+    autoResolutionAfterCheckIn: autoResolutionAfterCheckIn,
+  );
 }
 
-void _navigateToChecklist(BuildContext context) async {
+void _navigateToChecklist(
+  BuildContext context, {
+  DateTime? checkInTime,
+  bool autoResolutionAfterCheckIn = false,
+}) async {
   debugPrint("🔄 Navigating to ChecklistPage for Ticket ID: ${widget.ticket['id']}");
   await _updateTicketProgress();
 
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  int ticketId = widget.ticket['id'];
-  List<String>? savedProgressList = prefs.getStringList('progressSteps_$ticketId');
+  if (!autoResolutionAfterCheckIn) {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    int ticketId = widget.ticket['id'];
+    List<String>? savedProgressList =
+        prefs.getStringList('progressSteps_$ticketId');
 
-  if (savedProgressList != null) {
-    setState(() {
-      ticket.progressSteps = savedProgressList.map((progressJson) {
-        Map<String, dynamic> progressData = jsonDecode(progressJson);
+    if (savedProgressList != null) {
+      setState(() {
+        ticket.progressSteps = savedProgressList.map((progressJson) {
+          Map<String, dynamic> progressData = jsonDecode(progressJson);
 
-        List<PlatformFile>? attachedFiles;
-        if (progressData['attachedFiles'] != null) {
-          attachedFiles = (progressData['attachedFiles'] as List).map((f) {
-            final decodedBytes = base64Decode(f['bytes']);
-            return PlatformFile.fromMap({
-              'name': f['name'],
-              'bytes': decodedBytes,
-              'size': decodedBytes.length,
-              'extension': f['extension'],
-            });
-          }).toList();
-        }
+          List<PlatformFile>? attachedFiles;
+          if (progressData['attachedFiles'] != null) {
+            attachedFiles = (progressData['attachedFiles'] as List).map((f) {
+              final decodedBytes = base64Decode(f['bytes']);
+              return PlatformFile.fromMap({
+                'name': f['name'],
+                'bytes': decodedBytes,
+                'size': decodedBytes.length,
+                'extension': f['extension'],
+              });
+            }).toList();
+          }
 
-        return ProgressStep(
-          title: progressData['title'],
-          timestamp: progressData['timestamp'] != null
-              ? DateTime.parse(progressData['timestamp'])
-              : null,
-          isCompleted: progressData['isCompleted'] ?? false,
-          icon: getIconByName(progressData['iconName']),
-          description: progressData['description'],
-          attachedFiles: attachedFiles,
-        );
-      }).toList();
-    });
+          return ProgressStep(
+            title: progressData['title'],
+            timestamp: progressData['timestamp'] != null
+                ? DateTime.parse(progressData['timestamp'])
+                : null,
+            isCompleted: progressData['isCompleted'] ?? false,
+            icon: getIconByName(progressData['iconName']),
+            description: progressData['description'],
+            attachedFiles: attachedFiles,
+          );
+        }).toList();
+      });
+    }
   }
 
   final result = await Navigator.push(
     context,
     MaterialPageRoute(
       builder: (context) => ChecklistPage(
-        initialCheckInTime: checkInTime,
+        initialCheckInTime: checkInTime ?? ticket.checkInTime,
         isDarkMode: widget.isDarkMode,
         odooService: widget.odooService,
         ticket: ticket,
+        autoResolutionAfterCheckIn: autoResolutionAfterCheckIn,
       ),
     ),
   );
