@@ -14,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'dart:async'; // ✅ Tambahkan ini untuk Timer
 import 'package:url_launcher/url_launcher.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../odoo_display.dart';
 
 Future<Position> determinePosition() async {
   bool serviceEnabled;
@@ -183,7 +184,7 @@ String _iconName(IconData? icon) {
 
   void _createTicketObject() {
     ticket = Ticket(
-      title: widget.ticket['title'] ?? 'No Title',
+      title: odooStr(widget.ticket['title'] ?? widget.ticket['name'], 'No Title'),
       id: widget.ticket['id'],
       isCompleted: widget.ticket['isCompleted'] ?? false,
       checkInTime: null,
@@ -191,25 +192,54 @@ String _iconName(IconData? icon) {
     );
   }
 
+DateTime? _parseOdooDateTime(dynamic raw) {
+  if (raw == null || raw == false) return null;
+  final s = raw.toString().trim();
+  if (s.isEmpty || s == 'false') return null;
+  try {
+    return DateFormat('yyyy-MM-dd HH:mm:ss').parse(s);
+  } catch (_) {
+    try {
+      return DateFormat('dd/MM/yyyy HH:mm:ss').parse(s);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
 Future<void> _loadCheckInStatus() async {
   SharedPreferences prefs = await SharedPreferences.getInstance();
+  final ticketId = widget.ticket['id'];
 
-  setState(() {
-    isCheckedIn = prefs.getBool('checked_in_${widget.ticket['id']}') ?? false;
-  });
+  // Prefer Odoo (source of truth), then ticket map from list API, then local prefs.
+  Map<String, dynamic>? ticketData =
+      await widget.odooService.getTicketDetails(ticketId);
+  DateTime? checkInTime = _parseOdooDateTime(ticketData?['check_in']) ??
+      _parseOdooDateTime(widget.ticket['check_in']);
 
-  // 🔄 **Dapatkan data terbaru dari Odoo**
-  Map<String, dynamic>? ticketData = await widget.odooService.getTicketDetails(widget.ticket['id']);
-  if (ticketData != null && ticketData['check_in'] != null) {
-    String checkInTimeStr = ticketData['check_in'];
-    DateTime checkInTime = DateFormat('yyyy-MM-dd HH:mm:ss').parse(checkInTimeStr);
-
+  if (checkInTime != null) {
     setState(() {
       ticket.checkInTime = checkInTime;
       isCheckedIn = true;
     });
+    await prefs.setBool('checked_in_$ticketId', true);
+    await prefs.setString(
+      'checkInTime_$ticketId',
+      DateFormat('dd/MM/yyyy HH:mm:ss').format(checkInTime),
+    );
+    widget.ticket['check_in'] =
+        DateFormat('yyyy-MM-dd HH:mm:ss').format(checkInTime);
+    return;
+  }
 
-    await prefs.setString('checkInTime_${widget.ticket['id']}', DateFormat('dd/MM/yyyy HH:mm:ss').format(checkInTime));
+  // No server check-in — clear stale local flag so Check In buttons show again.
+  await prefs.remove('checked_in_$ticketId');
+  await prefs.remove('checkInTime_$ticketId');
+  if (mounted) {
+    setState(() {
+      isCheckedIn = false;
+      ticket.checkInTime = null;
+    });
   }
 }
 
@@ -271,9 +301,8 @@ Future<void> _saveCheckOutStatus() async {
 Future<void> _fetchCheckOutFromOdoo() async {
   Map<String, dynamic>? ticketData = await widget.odooService.getTicketDetails(widget.ticket['id']);
 
-  if (ticketData != null && ticketData['check_out'] != null) {
-    String checkOutTimeStr = ticketData['check_out'];
-    final checkOutTime = DateFormat('yyyy-MM-dd HH:mm:ss').parse(checkOutTimeStr);
+  final checkOutTime = _parseOdooDateTime(ticketData?['check_out']);
+  if (checkOutTime != null) {
     setState(() {
       ticket.progressSteps.add(
         ProgressStep(
@@ -295,9 +324,10 @@ Future<void> _fetchCheckOutFromOdoo() async {
 
   @override
   Widget build(BuildContext context) {
-    final ticketTitle =
-        (widget.ticket['ticket_number_display'] ?? widget.ticket['name'] ?? 'Ticket Details')
-            .toString();
+    final ticketTitle = odooStr(
+      widget.ticket['ticket_number_display'] ?? widget.ticket['name'],
+      'Ticket Details',
+    );
     final topBarForeground =
         widget.isDarkMode ? Colors.black87 : const Color(0xFF282454);
 
@@ -379,7 +409,7 @@ Future<void> _fetchCheckOutFromOdoo() async {
                 Expanded(
                   child: _buildDetailRow(
                     'Created Date',
-                    widget.ticket['create_date'] ?? 'N/A',
+                    odooStr(widget.ticket['create_date'], 'N/A'),
                     Icons.calendar_today,
                     const Color(0xFF6EE7B7), // Light green for date icon
                     iconSize: 16,
@@ -1030,7 +1060,7 @@ Future<void> _fetchCheckOutFromOdoo() async {
       debugPrint('ERROR parsing lat/lon: $e');
       throw Exception('Ralat parsing koordinat ticket: $e');
     }
-    final String? address = widget.ticket['address'];
+    final String address = odooStr(widget.ticket['address']);
 
     // Jika tiada koordinat dan tiada alamat, hentikan cepat supaya UI responsif.
     if ((ticketLat == null || ticketLon == null || ticketLat == 0.0 || ticketLon == 0.0) &&
@@ -1210,10 +1240,6 @@ Widget _buildUpdateProgressButton() {
 }
 
 Widget _buildCheckInOrUpdateButton() {
-  if (widget.isAdminView) {
-    return const SizedBox.shrink(); // Hide the button for admin view
-  }
-
   if (widget.ticket['stage_name'].toString().toLowerCase().contains('closed')) {
     return Column(
       children: [
@@ -1392,7 +1418,7 @@ Future<void> _updateTicketProgress() async {
   List<ProgressStep> oldSteps = oldProgressList.map((json) {
     Map<String, dynamic> data = jsonDecode(json);
     return ProgressStep(
-      title: data['title'],
+      title: odooStr(data['title'], 'Step'),
       timestamp: data['timestamp'] != null ? DateTime.parse(data['timestamp']) : null,
       isCompleted: data['isCompleted'] ?? false,
        icon: getIconByName(data['iconName']),
@@ -1714,7 +1740,7 @@ List<Widget> _buildDetailsList() {
 }
 
 
-  Widget _buildStatusBadge(String? status) {
+  Widget _buildStatusBadge(dynamic status) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1722,7 +1748,7 @@ List<Widget> _buildDetailsList() {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        _getStageLabel(status ?? 'Unknown'),
+        _getStageLabel(odooStr(status, 'Unknown')),
         style: const TextStyle(
           color: Colors.white,
           fontSize: 10,
@@ -1850,16 +1876,19 @@ Future<void> _loadProgressFromSharedPreferences() async {
     );
   }
 
-  Color _getStageColor(String? stage) {
-    if (stage == null) return Colors.grey;
-    final stageLower = stage.toLowerCase();
+  Color _getStageColor(dynamic stage) {
+    final s = odooStr(stage);
+    if (s.isEmpty) return Colors.grey;
+    final stageLower = s.toLowerCase();
     if (stageLower.contains('closed')) return Colors.grey;
     if (stageLower.contains('open')) return const Color(0xFF46BBFE);
     return const Color(0xFF282454);
   }
 
-  String _getStageLabel(String stage) {
-    return stage.toUpperCase();
+  String _getStageLabel(dynamic stage) {
+    final s = odooStr(stage, 'Unknown');
+    if (s.toLowerCase().contains('staff closed')) return 'Closed';
+    return s;
   }
 
   Color _getPriorityColor(dynamic priority) {

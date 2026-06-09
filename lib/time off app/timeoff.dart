@@ -777,12 +777,13 @@ class _CalendarMonthWidgetState extends State<CalendarMonthWidget> {
     
     Map<DateTime, Map<String, dynamic>> map = {};
     for (var leave in leaves) {
-      // Filter ikut selectedLeaveTypes
       final leaveType = leave['leave_type']?.toLowerCase() ?? '';
       print('LEAVE TYPE: $leaveType');
       print('LEAVE DESCRIPTION: ${leave['description']}');
-      // Check if leaveType string contains any of the keywords in selectedLeaveTypes
-      if (!widget.selectedLeaveTypes.any((selectedType) => leaveType.contains(selectedType))) continue;
+      // If selectedLeaveTypes has keywords, filter — but if none match just show all
+      final hasKeywords = widget.selectedLeaveTypes.isNotEmpty;
+      final matchesFilter = !hasKeywords || widget.selectedLeaveTypes.any((t) => leaveType.contains(t));
+      if (!matchesFilter) continue;
 
       DateTime from = DateTime.parse(leave['date_from']);
       DateTime to = DateTime.parse(leave['date_to']);
@@ -1090,16 +1091,20 @@ class _CalendarMonthWidgetState extends State<CalendarMonthWidget> {
       final leaveState = leave['state'] ?? '';
       print('DEBUG: Leave state from data: $leaveState');
       
-      if (leaveState == 'validate' || leaveState == 'validate1') {
-        bgColor = Colors.green[100]; // Light green for validated
-        leaveStateLabel = 'Validated';
+      if (leaveState == 'validate') {
+        bgColor = Colors.green[100];
+        leaveStateLabel = 'Approved';
         leaveStateTextColor = Colors.green[900];
+      } else if (leaveState == 'validate1') {
+        bgColor = Colors.teal[50];
+        leaveStateLabel = '2nd Approval';
+        leaveStateTextColor = Colors.teal[800];
       } else if (leaveState == 'confirm') {
-        bgColor = Colors.orange[100]; // Light orange for to approve
+        bgColor = Colors.orange[100];
         leaveStateLabel = 'To Approve';
         leaveStateTextColor = Colors.orange[900];
       } else if (leaveState == 'refuse') {
-        bgColor = Colors.red[100]; // Light red for refused
+        bgColor = Colors.red[100];
         leaveStateLabel = 'Refused';
         leaveStateTextColor = Colors.red[900];
       }
@@ -1108,6 +1113,7 @@ class _CalendarMonthWidgetState extends State<CalendarMonthWidget> {
       print('DEBUG: Will render leave label: ${leaveTypeLabel != null ? 'YES' : 'NO'} for date: $date');
     }
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         if (leaveData != null) {
           // Show leave summary popup
@@ -1428,20 +1434,12 @@ class _TimeOffRequestDialogState extends State<TimeOffRequestDialog> {
       lastDate: DateTime(2100),
     );
     if (pickedDate != null) {
-      final TimeOfDay? pickedTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime((isFrom ? _fromDate : _toDate) ?? DateTime.now()),
+      // Use date-only (no time) — Odoo computes hours from the work schedule
+      final DateTime finalDateTime = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
       );
-      DateTime finalDateTime = pickedDate;
-      if (pickedTime != null) {
-        finalDateTime = DateTime(
-          pickedDate.year,
-          pickedDate.month,
-          pickedDate.day,
-          pickedTime.hour,
-          pickedTime.minute,
-        );
-      }
       setState(() {
         if (isFrom) {
           _fromDate = finalDateTime;

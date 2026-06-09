@@ -8,6 +8,8 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'config/odoo_config.dart';
+import 'odoo_display.dart';
 
 
 class OdooActionResult {
@@ -17,9 +19,9 @@ class OdooActionResult {
 }
 
 class OdooService {
-  final String baseUrl = 'https://myerp.com.my';
-  final String jsonRpcUrl = 'https://myerp.com.my/jsonrpc';
-  final String database = 'myerp_db';
+  String get baseUrl => OdooConfig.baseUrl;
+  String get jsonRpcUrl => OdooConfig.jsonRpcUrl;
+  String get database => OdooConfig.activeDatabase;
   String? _password;
   String? _userId;
   String? lastErrorMessage;
@@ -125,6 +127,24 @@ class OdooService {
     final userId = prefs.getString('user_id');
     final sessionId =
         prefs.getString('session_id') ?? prefs.getString('sessionId');
+    final savedUrl = prefs.getString('odooUrl');
+    final savedDb = prefs.getString('odooDb');
+
+    // Session from another server (e.g. production) must not be reused for local.
+    if (savedUrl != null &&
+        savedUrl.isNotEmpty &&
+        savedUrl != baseUrl) {
+      debugPrint(
+        '⚠️ Odoo URL changed ($savedUrl → $baseUrl). Clear session and login again.',
+      );
+      await _clearOdooSession(prefs);
+    }
+    if (savedDb != null && savedDb.isNotEmpty && savedDb != database) {
+      debugPrint(
+        '⚠️ Odoo DB changed ($savedDb → $database). Clear session and login again.',
+      );
+      await _clearOdooSession(prefs);
+    }
 
     if (userId != null &&
         password != null &&
@@ -139,6 +159,14 @@ class OdooService {
       return await authenticate(email, password) != null;
     }
     return false;
+  }
+
+  Future<void> _clearOdooSession(SharedPreferences prefs) async {
+    _userId = null;
+    _password = null;
+    await prefs.remove('session_id');
+    await prefs.remove('sessionId');
+    await prefs.remove('user_id');
   }
 
   
@@ -195,8 +223,10 @@ class OdooService {
               SharedPreferences prefs = await SharedPreferences.getInstance();
               await prefs.setString('sessionId', sessionId); // <-- Fix: save as sessionId
               await prefs.setString('session_id', sessionCookieValue); // for legacy code if needed
-              await prefs.setString('odooUrl', baseUrl); // <-- Save odooUrl for HomePage
+              await prefs.setString('odooUrl', baseUrl);
+              await prefs.setString('odooDb', database);
               print("✅ Session ID saved successfully: $sessionId");
+              print("✅ Odoo server: $baseUrl (db: $database)");
             } else {
               print("❌ Regex did not find session_id in the cookie string.");
             }
@@ -424,7 +454,10 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
           final responseData = json.decode(response.body);
 
           if (responseData['result'] != null) {
-            final tickets = responseData['result'] as List<dynamic>;
+            final tickets = (responseData['result'] as List<dynamic>)
+                .map((t) => normalizeOdooRecord(
+                    Map<String, dynamic>.from(t as Map<String, dynamic>)))
+                .toList();
             print("✅ Successfully fetched ${tickets.length} tickets via HTTP API");
             return tickets;
           } else if (responseData['error'] != null) {
@@ -570,7 +603,7 @@ Future<bool> submitCheckOut(int ticketId, String checkOutString) async {
 Future<List<Map<String, dynamic>>> fetchUsersFromOdoo() async {
   try {
     final response = await http.post(
-      Uri.parse('https://myerp.com.my/jsonrpc'), // Guna URL Odoo yang betul
+      Uri.parse('$jsonRpcUrl'), // Guna URL Odoo yang betul
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "jsonrpc": "2.0",
@@ -620,7 +653,7 @@ Future<List<Map<String, dynamic>>> fetchUsersFromOdoo() async {
     try {
       print("🔄 Trying fallback query...");
       final fallbackResponse = await http.post(
-      Uri.parse('https://myerp.com.my/jsonrpc'),
+      Uri.parse('$jsonRpcUrl'),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "jsonrpc": "2.0",
@@ -700,6 +733,8 @@ Future<Map<String, dynamic>?> getTicketDetails(int ticketId) async {
               "id",
               "close_comment",
               "description",
+              "check_in",
+              "check_out",
               "feedback_scale1",
               "feedback_scale2",
               "feedback_scale3",
@@ -717,14 +752,13 @@ Future<Map<String, dynamic>?> getTicketDetails(int ticketId) async {
     print("🔍 Response from Odoo: $responseData"); // ✅ Debug 
 
     if (responseData["result"] != null && responseData["result"].isNotEmpty) {
-      var ticketData = responseData["result"][0];
+      var ticketData =
+          normalizeOdooRecord(Map<String, dynamic>.from(responseData["result"][0]));
+      ticketData["close_comment"] = odooStr(ticketData["close_comment"]);
+      ticketData["description"] = odooStr(ticketData["description"]);
 
-      // ✅ Pastikan nilai close_comment dan description tidak false/null
-      ticketData["close_comment"] = ticketData["close_comment"] ?? "";
-      ticketData["description"] = ticketData["description"] ?? "";
-
-      print("✅ Final close_comment: ${ticketData["close_comment"]}"); // ✅ Debug 
-      print("✅ Final description: ${ticketData["description"]}"); // ✅ Debug 
+      print("✅ Final close_comment: ${ticketData["close_comment"]}");
+      print("✅ Final description: ${ticketData["description"]}");
 
       return ticketData;
     }
@@ -818,12 +852,11 @@ Future<bool> submitCloseComment(int ticketId, String closeComment) async {
 
       return steps.map((step) {
         return ProgressStep(
-  title: step["title"] ?? "Unknown Step",
-  timestamp: DateTime.tryParse(step["timestamp"] ?? ""),
-  isCompleted: step["is_completed"] ?? false,
-  icon: null, // ✅ Gunakan null kerana ini backend
-);
-
+          title: odooStr(step["title"], "Unknown Step"),
+          timestamp: DateTime.tryParse(odooStr(step["timestamp"])),
+          isCompleted: step["is_completed"] == true,
+          icon: null,
+        );
       }).toList();
     }
   } catch (e) {
@@ -1655,9 +1688,31 @@ Future<bool> _markTicketAsClosedViaRpc(int ticketId) async {
       return false;
     }
 
-    debugPrint("🔁 Fallback: closing ticketId=$ticketId via JSON-RPC execute_kw(helpdesk.ticket.close_ticket)");
+    debugPrint("🔁 Closing ticketId=$ticketId: searching for a closed stage");
 
-    final response = await http.post(
+    // Find closed stage directly — avoids dependency on a specific stage name
+    final stageKeywords = ['closed', 'done', 'resolved', 'complete'];
+    int? closedStageId;
+    for (final keyword in stageKeywords) {
+      final stageRows = await _searchRead(
+        'helpdesk.stage',
+        [['name', 'ilike', keyword]],
+        {'fields': ['id', 'name'], 'limit': 1},
+      );
+      if (stageRows.isNotEmpty) {
+        closedStageId = stageRows.first['id'] as int?;
+        debugPrint("✅ Found closed stage: ${stageRows.first['name']} (id=$closedStageId)");
+        break;
+      }
+    }
+
+    if (closedStageId == null) {
+      lastErrorMessage = "No closed stage found. Please create a stage named 'Closed' or 'Done' in Helpdesk settings.";
+      return false;
+    }
+
+    // Write the stage directly to the ticket
+    final writeResponse = await http.post(
       Uri.parse(jsonRpcUrl),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -1671,67 +1726,27 @@ Future<bool> _markTicketAsClosedViaRpc(int ticketId) async {
             int.parse(_userId!),
             _password,
             "helpdesk.ticket",
-            "close_ticket",
-            [ticketId],
+            "write",
+            [[ticketId], {"stage_id": closedStageId}],
           ]
         },
         "id": 99,
       }),
     );
-
-    debugPrint("🔹 Close Ticket (RPC close_ticket) Status: ${response.statusCode}");
-    debugPrint("🔹 Close Ticket (RPC close_ticket) Body: ${response.body}");
-
-    if (response.statusCode != 200) {
-      lastErrorMessage = "HTTP ${response.statusCode}: Failed to close ticket (RPC).";
-      return false;
-    }
-
-    final data = jsonDecode(response.body);
-    if (data is! Map<String, dynamic>) {
-      lastErrorMessage = "Invalid response from server (RPC).";
-      return false;
-    }
-
-    final topError = data['error'];
-    if (topError is Map<String, dynamic>) {
-      lastErrorMessage = topError['message']?.toString() ?? "Failed to close ticket (RPC).";
-      return false;
-    }
-
-    final result = data['result'];
-    if (result is Map<String, dynamic>) {
-      // Python method returns either {error:{...}} or {result:{success:true,...}}
-      final nestedError = result['error'];
-      if (nestedError is Map<String, dynamic>) {
-        lastErrorMessage = nestedError['message']?.toString() ?? "Failed to close ticket (RPC).";
-        return false;
-      }
-      final nestedResult = result['result'];
-      if (nestedResult is Map<String, dynamic> && nestedResult['success'] == true) {
-        lastErrorMessage = null;
-        return true;
-      }
-      if (nestedResult is Map<String, dynamic> && nestedResult['message'] != null) {
-        lastErrorMessage = nestedResult['message']?.toString();
-        return false;
-      }
-    }
-
-    // Some implementations may directly return a boolean
-    if (result == true) {
+    final writeData = jsonDecode(writeResponse.body);
+    if (writeData['result'] == true) {
       lastErrorMessage = null;
       return true;
     }
-
-    lastErrorMessage = lastErrorMessage ?? "Failed to close ticket (RPC).";
+    lastErrorMessage = writeData['error']?['data']?['message'] ?? "Failed to update ticket stage.";
     return false;
   } catch (e) {
-    lastErrorMessage = "Error closing ticket (RPC): $e";
+    lastErrorMessage = "Error closing ticket: $e";
     debugPrint("❌ $lastErrorMessage");
     return false;
   }
 }
+
 
 Future<bool> submitFeedbackToOdoo({
   required int ticketId,
@@ -1893,7 +1908,9 @@ Future<List<dynamic>> fetchAllTicketsForAdmin(String db, int uid, String passwor
                 'person_name',
                 'department',
                 'partner_email',
-                'partner_phone'
+                'partner_phone',
+                'check_in',
+                'check_out',
               ],
               'order': 'create_date desc',
             },
@@ -2182,7 +2199,7 @@ Future<bool> setNotificationEmail(String notificationEmail) async {
 
 Future<Map<String, dynamic>> fetchUserData(String email, String password) async {
   final response = await http.post(
-    Uri.parse('https://myerp.com.my/jsonrpc'),
+    Uri.parse('$jsonRpcUrl'),
     headers: {'Content-Type': 'application/json'},
     body: jsonEncode({
       'jsonrpc': '2.0',
@@ -2221,7 +2238,7 @@ Future<Map<String, dynamic>> fetchUserData(String email, String password) async 
 
 
 Future<void> sendTicketNotification(String userToken, String ticketTitle, String ticketId) async {
-  final String fcmUrl = 'https://myerp.com.my/fcm/send';
+  final String fcmUrl = '$baseUrl/fcm/send';
   final Map<String, String> headers = {
     'Content-Type': 'application/json',
     'Authorization': 'key=YOUR_FIREBASE_SERVER_KEY_HERE',
@@ -2343,7 +2360,7 @@ Future<void> _sendFcmToken(String? token) async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('user_id');
     final response = await http.post(
-      Uri.parse('https://myerp.com.my/api/leaves'),
+      Uri.parse('$baseUrl/api/leaves'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'employee_id': int.parse(userId!),
@@ -2362,52 +2379,58 @@ Future<void> _sendFcmToken(String? token) async {
 
   Future<List<Map<String, dynamic>>> fetchLeavesWithUserId(String? userId, int year, int month) async {
     if (userId == null) return [];
-    
-    // Get employee_id for this user first
-    int? employeeId;
     try {
-      final employeeData = await checkEmployeeData(int.parse(userId));
-      if (employeeData['result'] != null && employeeData['result']['employee'] != null) {
-        employeeId = employeeData['result']['employee']['id'];
-        print('🔍 DEBUG: Found employee_id: $employeeId for user_id: $userId');
+      await checkAndLoadUserCredentials();
+      final uid = int.parse(userId);
+
+      // Find employee for this user
+      final empRows = await _searchRead(
+        'hr.employee',
+        [['user_id', '=', uid]],
+        {'fields': ['id', 'name'], 'limit': 1},
+      );
+      if (empRows.isEmpty) {
+        debugPrint('⚠️ No hr.employee for user $userId — cannot fetch leaves');
+        return [];
       }
+      final employeeId = empRows.first['id'] as int;
+
+      // Date range for the requested month
+      final monthStart = '$year-${month.toString().padLeft(2, '0')}-01 00:00:00';
+      final lastDay = DateTime(year, month + 1, 0).day;
+      final monthEnd = '$year-${month.toString().padLeft(2, '0')}-${lastDay.toString().padLeft(2, '0')} 23:59:59';
+
+      final rows = await _searchRead(
+        'hr.leave',
+        [
+          ['employee_id', '=', employeeId],
+          ['date_from', '<=', monthEnd],
+          ['date_to', '>=', monthStart],
+          ['state', 'in', ['confirm', 'validate1', 'validate', 'refuse']],
+        ],
+        {
+          'fields': ['id', 'holiday_status_id', 'date_from', 'date_to', 'state', 'name', 'employee_id'],
+        },
+      );
+
+      return rows.map((r) {
+        final typeField = r['holiday_status_id'];
+        final leaveType = typeField is List ? typeField[1]?.toString() ?? '' : '';
+        final empField = r['employee_id'];
+        final empName = empField is List ? empField[1]?.toString() ?? '' : '';
+        return {
+          'id': r['id'],
+          'leave_type': leaveType,
+          'date_from': r['date_from'],
+          'date_to': r['date_to'],
+          'state': r['state'],
+          'description': r['name'] ?? '',
+          'employee_id': empField is List ? empField[0] : r['employee_id'],
+          'employee_name': empName,
+        };
+      }).toList();
     } catch (e) {
-      print('❌ DEBUG: Error getting employee_id: $e');
-    }
-    
-    final requestBody = {
-      'user_id': int.parse(userId),
-      'employee_id': employeeId, // Add employee_id to request
-      'year': year,
-      'month': month,
-    };
-    
-    print('🔍 DEBUG: Fetching leaves with request: $requestBody');
-    print('🔍 DEBUG: User ID: $userId, Employee ID: $employeeId, Year: $year, Month: $month');
-    
-    final response = await http.post(
-      Uri.parse('https://myerp.com.my/api/leaves'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    );
-    
-    print('🔍 DEBUG: Leaves response status: ${response.statusCode}');
-    print('🔍 DEBUG: Leaves response body: ${response.body}');
-    
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final leaves = data['result'] ?? [];
-      
-      print('✅ Fetched ${leaves.length} leaves for user $userId');
-      
-      // Debug: Show each leave
-      for (var leave in leaves) {
-        print('🔍 DEBUG: Leave ID: ${leave['id']}, Employee: ${leave['employee_name']}, Type: ${leave['leave_type']}, State: ${leave['state']}');
-      }
-      
-      return List<Map<String, dynamic>>.from(leaves);
-    } else {
-      print('❌ Error fetching leaves with user_id: ${response.statusCode} ${response.body}');
+      debugPrint('❌ fetchLeavesWithUserId error: $e');
       return [];
     }
   }
@@ -2421,7 +2444,7 @@ Future<void> _sendFcmToken(String? token) async {
       print('🔍 DEBUG: Fetching approval leaves with request: $requestBody');
       
       final response = await http.post(
-        Uri.parse('https://myerp.com.my/api/leaves'),
+        Uri.parse('$baseUrl/api/leaves'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       );
@@ -2462,7 +2485,7 @@ Future<void> _sendFcmToken(String? token) async {
       print('🔍 DEBUG: Manager ID type: ${managerId.runtimeType}, value: $managerId');
       
       final response = await http.post(
-        Uri.parse('https://myerp.com.my/api/leaves/manager/list'),
+        Uri.parse('$baseUrl/api/leaves/manager/list'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       );
@@ -2496,7 +2519,7 @@ Future<void> _sendFcmToken(String? token) async {
   Future<Map<String, dynamic>> managerApproveLeave(int leaveId, int managerId) async {
     try {
       final response = await http.post(
-        Uri.parse('https://myerp.com.my/api/leaves/manager/approve'),
+        Uri.parse('$baseUrl/api/leaves/manager/approve'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'leave_id': leaveId,
@@ -2522,7 +2545,7 @@ Future<void> _sendFcmToken(String? token) async {
   Future<bool> isUserManager(int userId) async {
     try {
       final response = await http.post(
-        Uri.parse('https://myerp.com.my/api/leaves/manager/check'),
+        Uri.parse('$baseUrl/api/leaves/manager/check'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'user_id': userId,
@@ -2574,7 +2597,7 @@ Future<void> _sendFcmToken(String? token) async {
   Future<Map<String, dynamic>> checkEmployeeData(int userId) async {
     try {
       final response = await http.post(
-        Uri.parse('https://myerp.com.my/api/leaves/employee/check'),
+        Uri.parse('$baseUrl/api/leaves/employee/check'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'user_id': userId,
@@ -2601,7 +2624,7 @@ Future<void> _sendFcmToken(String? token) async {
   Future<Map<String, dynamic>> approveLeave(int leaveId) async {
     try {
       final response = await http.post(
-        Uri.parse('https://myerp.com.my/api/leaves/approve'),
+        Uri.parse('$baseUrl/api/leaves/approve'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'leave_id': leaveId,
@@ -2626,7 +2649,7 @@ Future<void> _sendFcmToken(String? token) async {
   Future<Map<String, dynamic>> refuseLeave(int leaveId) async {
     try {
       final response = await http.post(
-        Uri.parse('https://myerp.com.my/api/leaves/refuse'),
+        Uri.parse('$baseUrl/api/leaves/refuse'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'leave_id': leaveId,
@@ -2658,10 +2681,17 @@ Future<void> _sendFcmToken(String? token) async {
       return {'success': false, 'error': 'Missing required fields'};
     }
 
-    // Format dates as 'yyyy-MM-dd HH:mm:ss' for backend compatibility
-    final dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
-    final dateFromStr = dateFormat.format(dateFrom);
-    final dateToStr = dateFormat.format(dateTo);
+    // Malaysia is UTC+8. Work hours: 8:30–17:30 MYT = 00:30–09:30 UTC.
+    // Odoo stores datetime in UTC and ignores request_date_from on direct RPC
+    // create, so we must send explicit date_from/date_to in UTC.
+    final dateOnlyFormat = DateFormat('yyyy-MM-dd');
+    final dateFromUtc = DateTime.utc(dateFrom.year, dateFrom.month, dateFrom.day, 0, 30); // 08:30 MYT
+    final dateToUtc = DateTime.utc(dateTo.year, dateTo.month, dateTo.day, 9, 30);         // 17:30 MYT
+    final dateTimeFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+    final dateFromStr = dateOnlyFormat.format(dateFrom);
+    final dateToStr = dateOnlyFormat.format(dateTo);
+    final dateFromUtcStr = dateTimeFormat.format(dateFromUtc);
+    final dateToUtcStr = dateTimeFormat.format(dateToUtc);
 
     final requestBody = {
       'user_id': userId,
@@ -2673,21 +2703,122 @@ Future<void> _sendFcmToken(String? token) async {
 
     print('🔍 DEBUG: Creating leave request with data: $requestBody');
 
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/leaves/create'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    );
-    print('🔍 DEBUG: Response status: ${response.statusCode}');
-    print('🔍 DEBUG: Response body: ${response.body}');
-    
-    if (response.statusCode == 200) {
+    Map<String, dynamic> parseLeaveResponse(http.Response response) {
+      if (response.statusCode != 200) {
+        return {
+          'success': false,
+          'error': 'Server error: ${response.statusCode} - ${response.body}',
+        };
+      }
       final data = jsonDecode(response.body);
-      print('🔍 DEBUG: Parsed response data: $data');
-      return data['result'] ?? {};
-    } else {
-      print('❌ DEBUG: Server error response: ${response.body}');
-      return {'success': false, 'error': 'Server error: ${response.statusCode} - ${response.body}'};
+      if (data is Map && data['error'] != null) {
+        final err = data['error'];
+        final msg = err is Map
+            ? (err['data']?['message'] ?? err['message'] ?? err.toString())
+            : err.toString();
+        return {'success': false, 'error': msg};
+      }
+      final result = data is Map ? (data['result'] ?? data) : data;
+      if (result is Map<String, dynamic>) return result;
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return {'success': false, 'error': 'Unexpected response from server'};
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/leaves/create'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'params': requestBody,
+          'id': 1,
+        }),
+      );
+      print('🔍 DEBUG: Response status: ${response.statusCode}');
+      print('🔍 DEBUG: Response body: ${response.body}');
+      final parsed = parseLeaveResponse(response);
+      if (parsed['success'] == true) return parsed;
+      if (response.statusCode != 404) return parsed;
+    } catch (e) {
+      print('⚠️ Leave API failed, trying RPC: $e');
+    }
+
+    // Fallback: direct hr.leave create when /api/leaves/create is missing.
+    try {
+      await checkAndLoadUserCredentials();
+      final auth = await _prefsAuth();
+      final uid = int.parse(auth['uid']!);
+      final prefs = await SharedPreferences.getInstance();
+      final userEmail = prefs.getString('user_email') ?? prefs.getString('email');
+      final userName = prefs.getString('user_name') ?? prefs.getString('name');
+
+      // Try finding employee by user_id first, then fall back to email/name
+      List<Map<String, dynamic>> employeeRows = await _searchRead(
+        'hr.employee',
+        [['user_id', '=', uid]],
+        {'fields': ['id'], 'limit': 1},
+      );
+      if (employeeRows.isEmpty && userEmail != null && userEmail.isNotEmpty) {
+        employeeRows = await _searchRead(
+          'hr.employee',
+          [['work_email', '=', userEmail]],
+          {'fields': ['id'], 'limit': 1},
+        );
+      }
+      if (employeeRows.isEmpty && userName != null && userName.isNotEmpty) {
+        employeeRows = await _searchRead(
+          'hr.employee',
+          [['name', 'ilike', userName]],
+          {'fields': ['id'], 'limit': 1},
+        );
+      }
+      if (employeeRows.isEmpty) {
+        return {
+          'success': false,
+          'error': 'No employee record found for this user. Please ask your admin to link your user account to an employee in Odoo.',
+        };
+      }
+      final typeRows = await _searchRead(
+        'hr.leave.type',
+        [
+          ['name', 'ilike', leaveType],
+        ],
+        {'fields': ['id'], 'limit': 1},
+      );
+      if (typeRows.isEmpty) {
+        return {
+          'success': false,
+          'error': 'Leave type "$leaveType" not found in Odoo.',
+        };
+      }
+      final leaveId = await _createModel('hr.leave', {
+        'employee_id': employeeRows.first['id'],
+        'holiday_status_id': typeRows.first['id'],
+        'request_date_from': dateFromStr,
+        'request_date_to': dateToStr,
+        'date_from': dateFromUtcStr,
+        'date_to': dateToUtcStr,
+        'name': description.isNotEmpty ? description : leaveType,
+      });
+      // Confirm the leave so it moves from draft → confirm and appears on the calendar
+      try {
+        final auth = await _prefsAuth();
+        await _executeKwRaw([
+          database,
+          int.parse(auth['uid']!),
+          auth['pwd']!,
+          'hr.leave',
+          'action_confirm',
+          [[leaveId]],
+        ]);
+      } catch (e) {
+        debugPrint('⚠️ action_confirm failed (leave stays draft): $e');
+      }
+      return {'success': true, 'leave_id': leaveId};
+    } catch (e) {
+      print('❌ RPC create leave failed: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -4236,14 +4367,13 @@ Note: These changes require administrator privileges in Odoo.
   // ---------------------------------------------------------------------------
   static const String _odooPmModel = 'preventive.maintenance';
   static const String _odooPmRequestModel = 'maintenance.request';
-  static const String _odooPmTaskModel = 'preventive.maintenance.task';
-  static const String _odooPmTaskModelAlt = 'preventive.maintenance.line';
+  static const String _odooPmTaskModel = 'maintenance.task';
 
-  static const List<String> _pmFormFields = [
+  /// List/kanban fetch — omit heavy binary & computed QR fields.
+  static const List<String> _pmListFields = [
     'id',
     'name',
     'project_id',
-    'zone_id',
     'lot_location',
     'lot_serial_number',
     'serial_number_id',
@@ -4256,6 +4386,13 @@ Note: These changes require administrator privileges in Odoo.
     'lot_user_no',
     'rack_no',
     'technician',
+    'stage',
+    'other_remarks',
+    'pm_name',
+  ];
+
+  static const List<String> _pmFormFields = [
+    ..._pmListFields,
     'user_signature',
     'user_signature_date',
     'representative_name',
@@ -4264,9 +4401,6 @@ Note: These changes require administrator privileges in Odoo.
     'pic_name',
     'qr_code_user',
     'qr_code_pic',
-    'stage',
-    'remarks',
-    'pm_name',
   ];
 
   Future<Map<String, String>> _prefsAuth() async {
@@ -4418,21 +4552,11 @@ Note: These changes require administrator privileges in Odoo.
       'days_left_deadline',
     ];
 
+    // Count fields are computed (not stored) on maintenance.request — cannot use them in RPC domain.
     final List<dynamic> domain = [];
     if (!includeAll) {
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       domain.add(['deadline', '>=', today]);
-    }
-    if (status == 'active') {
-      domain.add(['preventive_maintenance_count_new', '>', 0]);
-    } else if (status == 'complete') {
-      domain.addAll([
-        '|',
-        ['preventive_maintenance_done_percentage', '>=', 100],
-        '&',
-        ['preventive_maintenance_count_new', '=', 0],
-        ['preventive_maintenance_count_done', '>', 0],
-      ]);
     }
 
     var rows = await _searchRead(
@@ -4672,6 +4796,14 @@ Note: These changes require administrator privileges in Odoo.
         rows = await _synthesizePmKanbanFromPreventiveLines(status: status);
       }
 
+      if (rows.isNotEmpty) {
+        final first = rows.first;
+        debugPrint(
+          '🔹 PM sample: ${first['name']} done=${first['preventive_maintenance_count_done']} '
+          'todo=${first['preventive_maintenance_count_new']} @ $baseUrl',
+        );
+      }
+
       return _filterPmKanbanRows(rows, status);
     } catch (e) {
       debugPrint('❌ fetchPmKanbanRequests: $e');
@@ -4691,7 +4823,7 @@ Note: These changes require administrator privileges in Odoo.
         ['project_id', '=', projectId],
       ],
       {
-        'fields': _pmFormFields,
+        'fields': _pmListFields,
         'limit': 2000,
         'order': 'lot_location, id',
       },
@@ -4813,36 +4945,31 @@ Note: These changes require administrator privileges in Odoo.
     required int requestId,
     required String stage,
   }) async {
-    final domains = <List<dynamic>>[
-      [
-        ['pm_name', '=', requestId],
-        ['stage', '=', stage],
-      ],
-      [
-        ['request_id', '=', requestId],
-        ['stage', '=', stage],
-      ],
-      [
-        ['maintenance_request_id', '=', requestId],
-        ['stage', '=', stage],
-      ],
-    ];
-    for (final d in domains) {
-      try {
-        return await _searchRead(
-          _odooPmModel,
-          d,
-          {
-            'fields': _pmFormFields,
-            'limit': 2000,
-            'order': 'lot_location, id',
-          },
-        );
-      } catch (_) {}
+    await checkAndLoadUserCredentials();
+    try {
+      final rows = await _searchRead(
+        _odooPmModel,
+        [
+          ['pm_name', '=', requestId],
+          ['stage', '=', stage],
+        ],
+        {
+          'fields': _pmListFields,
+          'limit': 2000,
+          'order': 'lot_location, id',
+        },
+      );
+      debugPrint(
+        '🔹 PM lines: request=$requestId stage=$stage count=${rows.length}',
+      );
+      return rows;
+    } catch (e) {
+      debugPrint('❌ fetchPreventiveMaintenanceByRequest: $e');
+      lastErrorMessage ??= e.toString();
+      throw Exception(
+        'Could not load PM lines for request $requestId: $e',
+      );
     }
-    throw Exception(
-      'Could not load PM lines for request $requestId (check Odoo domain fields).',
-    );
   }
 
   Future<Map<String, dynamic>?> fetchPreventiveMaintenanceDetail(int pmId) async {
@@ -4858,6 +4985,7 @@ Note: These changes require administrator privileges in Odoo.
   }
 
   Future<List<Map<String, dynamic>>> fetchMaintenanceTasksByPmId(int pmId) async {
+    await checkAndLoadUserCredentials();
     const taskFields = [
       'id',
       'name',
@@ -4870,26 +4998,22 @@ Note: These changes require administrator privileges in Odoo.
       'check',
       'is_yes',
       'is_no',
+      'pm_id',
     ];
-    for (final model in [_odooPmTaskModel, _odooPmTaskModelAlt]) {
-      for (final fk in [
-        'maintenance_id',
-        'pm_id',
-        'preventive_maintenance_id',
-      ]) {
-        try {
-          final rows = await _searchRead(
-            model,
-            [
-              [fk, '=', pmId],
-            ],
-            {'fields': taskFields, 'limit': 2000, 'order': 'id'},
-          );
-          return rows;
-        } catch (_) {}
-      }
+    try {
+      final rows = await _searchRead(
+        _odooPmTaskModel,
+        [
+          ['pm_id', '=', pmId],
+        ],
+        {'fields': taskFields, 'limit': 2000, 'order': 'category_id, id'},
+      );
+      debugPrint('🔹 PM checklist: pm_id=$pmId tasks=${rows.length}');
+      return rows;
+    } catch (e) {
+      debugPrint('❌ fetchMaintenanceTasksByPmId: $e');
+      return [];
     }
-    return [];
   }
 
   Future<List<Map<String, dynamic>>> fetchTechnicians() async {
@@ -5008,13 +5132,7 @@ Note: These changes require administrator privileges in Odoo.
     if (isYes != null) vals['is_yes'] = isYes;
     if (isNo != null) vals['is_no'] = isNo;
     if (vals.isEmpty) return;
-    for (final model in [_odooPmTaskModel, _odooPmTaskModelAlt]) {
-      try {
-        await _writeModel(model, [taskId], vals);
-        return;
-      } catch (_) {}
-    }
-    throw Exception('Could not update task $taskId');
+    await _writeModel(_odooPmTaskModel, [taskId], vals);
   }
 
   Future<void> updateMaintenanceTasksBulk({
@@ -5022,13 +5140,7 @@ Note: These changes require administrator privileges in Odoo.
     required Map<String, dynamic> values,
   }) async {
     if (taskIds.isEmpty || values.isEmpty) return;
-    for (final model in [_odooPmTaskModel, _odooPmTaskModelAlt]) {
-      try {
-        await _writeModel(model, taskIds, values);
-        return;
-      } catch (_) {}
-    }
-    throw Exception('Could not bulk-update tasks');
+    await _writeModel(_odooPmTaskModel, taskIds, values);
   }
 
   Future<bool> uploadPmAttachment({

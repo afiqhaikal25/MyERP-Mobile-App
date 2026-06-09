@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'package:timezone/data/latest.dart' as tz;
 import 'home.dart';
+import 'config/odoo_config.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
@@ -40,6 +41,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   try {
     print("🚀 Starting Ticket application...");
+    print(
+      "🔗 Odoo server: ${OdooConfig.baseUrl} (db: ${OdooConfig.activeDatabase}, local: ${OdooConfig.useLocal})",
+    );
     WidgetsFlutterBinding.ensureInitialized();
     
     // Initialize timezone first (fast)
@@ -193,6 +197,31 @@ Future<Widget> getInitialPage({void Function(bool)? onThemeChanged}) async {
     print("🍪 Stored sessionId: ${sessionId != null ? 'Found' : 'Not found'} - Value: '$sessionId' - Length: ${sessionId?.length ?? 0}");
     print("👤 Stored userId: ${userId != null ? 'Found' : 'Not found'} - Value: '$userId' - Length: ${userId?.length ?? 0}");
 
+    final savedUrl = prefs.getString('odooUrl');
+    final savedDb = prefs.getString('odooDb');
+    final targetUrl = OdooConfig.baseUrl;
+    final targetDb = OdooConfig.activeDatabase;
+    if (savedUrl != null &&
+        savedUrl.isNotEmpty &&
+        savedUrl != targetUrl) {
+      print(
+        "⚠️ Odoo server changed ($savedUrl → $targetUrl). Clearing session — login again.",
+      );
+      await prefs.remove('sessionId');
+      await prefs.remove('session_id');
+      await prefs.remove('user_id');
+      return const LoginPage();
+    }
+    if (savedDb != null && savedDb.isNotEmpty && savedDb != targetDb) {
+      print(
+        "⚠️ Odoo database changed ($savedDb → $targetDb). Clearing session — login again.",
+      );
+      await prefs.remove('sessionId');
+      await prefs.remove('session_id');
+      await prefs.remove('user_id');
+      return const LoginPage();
+    }
+
     // Jika sessionId dan userId masih ada, langsung ke HomePage (fast path)
     if (sessionId != null && userId != null && email != null && password != null && 
         email.isNotEmpty && password.isNotEmpty) {
@@ -310,34 +339,14 @@ Future<void> saveFcmToken(String email, {BuildContext? context}) async {
       final success = await OdooService().sendFcmToken(token);
       if (success) {
         print("✅ FCM token sent successfully via OdooService");
-        if (context != null && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("FCM token updated successfully"), backgroundColor: Colors.green),
-          );
-        }
       } else {
         print("❌ Failed to send FCM token via OdooService");
-        if (context != null && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Failed to update FCM token"), backgroundColor: Colors.red),
-          );
-        }
       }
     } catch (e) {
       print("❌ Error sending FCM token: $e");
-      if (context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to update FCM token"), backgroundColor: Colors.red),
-        );
-      }
     }
   } catch (e) {
     print('❌ Error in saveFcmToken: $e');
-    if (context != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Failed to update FCM token"), backgroundColor: Colors.red),
-      );
-    }
   }
 }
 

@@ -71,3 +71,12 @@ config_secret.dart
 # Release APK (build locally; do not commit)
 *.apk
 myerp.com Mobile App.apk
+
+# Odoo server code (separate deployment)
+myerp web odoo/
+
+# Large log files
+build_log.txt
+flutter_log.txt
+firepit-log.txt
+android/build/

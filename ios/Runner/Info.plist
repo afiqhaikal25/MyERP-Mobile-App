@@ -24,8 +24,46 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to camera to allow users to take photos for ticket attachments and profile pictures.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs access to location to help technicians locate service areas and for ticket location tracking.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs access to location to help technicians locate service areas and for ticket location tracking.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to photo library to allow users to select and upload images for ticket attachments and profile pictures.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>FlutterSceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>
@@ -49,22 +87,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-
-	<!-- ✅ Tambahan penting untuk Apple processing -->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	
-	<!-- ✅ Purpose strings untuk privacy compliance -->
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to photo library to allow users to select and upload images for ticket attachments and profile pictures.</string>
-	
-	<key>NSCameraUsageDescription</key>
-	<string>This app needs access to camera to allow users to take photos for ticket attachments and profile pictures.</string>
-	
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app needs access to location to help technicians locate service areas and for ticket location tracking.</string>
-	
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>This app needs access to location to help technicians locate service areas and for ticket location tracking.</string>
 </dict>
 </plist>

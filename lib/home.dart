@@ -14,6 +14,7 @@ import 'PM/pm.dart';
 import 'project app/project.dart';
 import 'time off app/timeoff.dart';
 import 'task.dart';
+import 'calendar app/calendar.dart';
 
 class HomePage extends StatefulWidget {
   final String email;
@@ -711,6 +712,16 @@ class _HomePageState extends State<HomePage> {
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => const InventoryPage(),
+                                    ),
+                                  ),
+                                ),
+                                _tile(
+                                  icon: Icons.calendar_month_outlined,
+                                  label: 'Calendar',
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const CalendarPage(),
                                     ),
                                   ),
                                 ),

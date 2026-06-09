@@ -15,6 +15,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
+import '../odoo_display.dart';
 
 
 enum TicketFilter {
@@ -148,7 +149,8 @@ Future<List<dynamic>> _fetchTickets() async {
       print("✅ Fetched tickets: ${rawTickets.length}");
 
       final updatedTickets = rawTickets
-          .map((ticket) => Map<String, dynamic>.from(ticket))
+          .map((ticket) => normalizeOdooRecord(
+              Map<String, dynamic>.from(ticket as Map<String, dynamic>)))
           .map(_addHasFeedbackFlag)
           .toList();
 
@@ -209,7 +211,8 @@ Future<List<dynamic>> _initialFetchTickets() async {
 
     // Process and return tickets
     final updatedTickets = rawTickets
-        .map((ticket) => Map<String, dynamic>.from(ticket))
+        .map((ticket) => normalizeOdooRecord(
+            Map<String, dynamic>.from(ticket as Map<String, dynamic>)))
         .map(_addHasFeedbackFlag)
         .toList();
 
@@ -573,7 +576,7 @@ Widget _buildTicketCard(Map<String, dynamic> ticket) {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      ticket['ticket_number_display'] ?? ticket['name'] ?? "Unnamed Ticket",
+                                      odooStr(ticket['ticket_number_display'] ?? ticket['name'], "Unnamed Ticket"),
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
@@ -651,25 +654,25 @@ Widget _buildTicketCard(Map<String, dynamic> ticket) {
                           children: [
                             _buildInfoRow(
                               Icons.person,
-                              'Customer - ${ticket['partner_name'] ?? 'No Customer'}',
+                              'Customer - ${odooStr(ticket['partner_name'], 'No Customer')}',
                               _isDarkMode ? Colors.white : const Color(0xFF282454),
                             ),
                             const SizedBox(height: 4),
                             _buildInfoRow(
                               Icons.location_on,
-                              'Address - ${ticket['address'] ?? 'No Address'}',
+                              'Address - ${odooStr(ticket['address'], 'No Address')}',
                               _isDarkMode ? Colors.white : const Color(0xFF282454),
                             ),
                             const SizedBox(height: 4),
                             _buildInfoRow(
                               Icons.category_outlined,
-                              'Category - ${ticket['category_name'] ?? 'Uncategorized'}',
+                              'Category - ${odooStr(ticket['category_name'], 'Uncategorized')}',
                               _isDarkMode ? Colors.white : const Color(0xFF282454),
                             ),
                             const SizedBox(height: 4),
                             _buildInfoRow(
                               Icons.build_outlined,
-                              'Problem - ${ticket['prob_name'] ?? 'No Problem Specified'}',
+                              'Problem - ${odooStr(ticket['prob_name'], 'No Problem Specified')}',
                               _isDarkMode ? Colors.white : const Color(0xFF282454),
                             ),
                           ],

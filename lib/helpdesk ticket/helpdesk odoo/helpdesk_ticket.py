@@ -2797,6 +2797,8 @@ class HelpdeskTicketController(http.Controller):
                     'prob_name',
                     'stage_name',
                     'create_date',
+                    'check_in',
+                    'check_out',
                 ]
             )
 
@@ -2809,6 +2811,10 @@ class HelpdeskTicketController(http.Controller):
             for ticket in tickets:
                 if 'create_date' in ticket and ticket['create_date']:
                     ticket['create_date'] = ticket['create_date'].strftime('%Y-%m-%d %H:%M:%S')
+                if ticket.get('check_in'):
+                    ticket['check_in'] = ticket['check_in'].strftime('%Y-%m-%d %H:%M:%S')
+                if ticket.get('check_out'):
+                    ticket['check_out'] = ticket['check_out'].strftime('%Y-%m-%d %H:%M:%S')
 
             return request.make_response(
                 json.dumps({"result": tickets}),

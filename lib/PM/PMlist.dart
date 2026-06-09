@@ -266,8 +266,44 @@ class _PMListPageState extends State<PMListPage> {
   Widget build(BuildContext context) {
     final visibleItems = _applySearch(_items);
     final totalCount = visibleItems.length;
+    final locationTitle = widget.locationName.isEmpty
+        ? 'Serial Numbers'
+        : widget.locationName;
+    final stageLabel = widget.stage == 'done' ? 'Done' : 'To Do';
+
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF282454),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+          onPressed: () => Navigator.pop(context),
+          tooltip: 'Back',
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              locationTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              stageLabel,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withOpacity(0.85),
+              ),
+            ),
+          ],
+        ),
+      ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
             future: _future,
             builder: (context, snapshot) {

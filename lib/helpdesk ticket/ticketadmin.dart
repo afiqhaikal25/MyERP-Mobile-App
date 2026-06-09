@@ -708,30 +708,33 @@ body: Builder(
 
   void _onTicketTap(Map<String, dynamic> ticket) {
     final stageName = (ticket['stage_name'] ?? '').toString().toLowerCase();
-    final feedbackScales = [
-      ticket['feedback_scale1'],
-      ticket['feedback_scale2'],
-      ticket['feedback_scale3'],
-      ticket['feedback_scale4'],
-      ticket['feedback_scale5'],
-      ticket['feedback_scale6'],
-    ];
+    final bool isClosed =
+        stageName.contains('closed') || stageName.contains('done');
 
-    bool isClosed = stageName.contains('closed') || stageName.contains('done');
-    final hasFeedback = feedbackScales.every((scale) {
-      final value = double.tryParse(scale?.toString() ?? '');
-      return value != null && value > 0;
-    });
+    if (!isClosed) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TicketDetailsPage(
+            ticket: ticket,
+            odooService: _odooService,
+            isDarkMode: _isDarkMode,
+            onTicketUpdated: _fetchAllTickets,
+          ),
+        ),
+      );
+      return;
+    }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('What would you like to do?'),
-        content: Text(isClosed ? 'This ticket is closed.' : 'This ticket is still open.'),
+        content: const Text('This ticket is closed and feedback has been submitted.'),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Close popup
+              Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -743,7 +746,7 @@ body: Builder(
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Close popup
+              Navigator.pop(context);
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -752,7 +755,6 @@ body: Builder(
                     odooService: _odooService,
                     isDarkMode: _isDarkMode,
                     onTicketUpdated: _fetchAllTickets,
-                    isAdminView: true,
                   ),
                 ),
               );

@@ -203,7 +203,7 @@ class _PMDetailsPageState extends State<PMDetailsPage> {
     final cardColor =
         _isDarkMode ? Colors.black.withOpacity(0.55) : Colors.white.withOpacity(0.92);
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: cardColor,
@@ -251,6 +251,38 @@ class _PMDetailsPageState extends State<PMDetailsPage> {
 
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF282454),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+          onPressed: () => Navigator.pop(context),
+          tooltip: 'Back',
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withOpacity(0.85),
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
       body: Column(
             children: [
               _searchAndFilterBar(),

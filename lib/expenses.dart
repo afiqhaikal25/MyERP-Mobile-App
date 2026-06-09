@@ -519,10 +519,13 @@ class _ExpensesPageState extends State<ExpensesPage> {
   }
 
   Future<void> _openExpenseLineFromReport(int expenseId) async {
+    final expense = _expenses.firstWhere(
+      (e) => (e['id'] is int ? e['id'] : int.tryParse(e['id']?.toString() ?? '')) == expenseId,
+      orElse: () => {'id': expenseId, 'name': 'Expense #$expenseId'},
+    );
     await Navigator.push(
       context,
-      MaterialPageRoute(
-          builder: (_) => ExpenseDetailsPage(expenseId: expenseId)),
+      MaterialPageRoute(builder: (_) => ExpenseDetailsPage(expense: expense)),
     );
     if (mounted) _loadExpensesFromOdoo();
   }
@@ -2308,8 +2311,9 @@ class _ExpensesPageState extends State<ExpensesPage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: isDark ? Colors.black : Colors.white,
-      body: Stack(
-        children: [
+      body: SafeArea(
+        child: Stack(
+          children: [
           Column(
             children: [
               const SizedBox(height: 12),
@@ -2591,6 +2595,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
             ],
           ),
         ],
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: SafeArea(
@@ -2634,8 +2639,7 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF2D2D2D) : Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -2654,23 +2658,26 @@ class _SummaryCard extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 9,
-              height: 1.1,
+              fontSize: 11,
+              height: 1.3,
               color: isDark ? Colors.white70 : Colors.grey.shade600,
               fontWeight: FontWeight.w500,
             ),
-            overflow: TextOverflow.ellipsis,
             maxLines: 2,
+            softWrap: true,
           ),
-          const SizedBox(height: 2),
-          Text(
-            'RM ${amount.toStringAsFixed(2)}',
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF282454),
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'RM ${amount.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : const Color(0xFF282454),
+              ),
             ),
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -2851,8 +2858,7 @@ class _ExpenseCard extends StatelessWidget {
                   ? () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              ExpenseDetailsPage(expenseId: expenseId),
+                          builder: (_) => ExpenseDetailsPage(expense: expense),
                         ),
                       )
                   : null,

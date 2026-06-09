@@ -1640,7 +1640,7 @@ SPEC CHECKSUMS:
   FirebaseMessaging: 195bbdb73e6ca1dbc76cd46e73f3552c084ef6e4
   FirebaseSharedSwift: e17c654ef1f1a616b0b33054e663ad1035c8fd40
   FirebaseStorage: 2a3e5402a565e06e121308dadfe0626976fd6b45
-  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_local_notifications: 395056b3175ba4f08480a7c5de30cd36d69827e4
   flutter_pdfview: 32bf27bda6fd85b9dd2c09628a824df5081246cf
   geocoding_ios: bcbdaa6bddd7d3129c9bcb8acddc5d8778689768

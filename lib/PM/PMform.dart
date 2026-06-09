@@ -2232,19 +2232,43 @@ class _PMFormPageState extends State<PMFormPage> {
     }
   }
 
+  PreferredSizeWidget _buildAppBar(BuildContext context, String title) {
+    return AppBar(
+      backgroundColor: const Color(0xFF282454),
+      foregroundColor: Colors.white,
+      elevation: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+        onPressed: () => Navigator.pop(context, _pmUpdated),
+        tooltip: 'Back',
+      ),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  void _goBack() {
+    Navigator.pop(context, _pmUpdated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = widget.serialNumberTitle.isEmpty
         ? 'Serial Number'
         : widget.serialNumberTitle;
 
-    return WillPopScope(
-      onWillPop: () async {
-        Navigator.pop(context, _pmUpdated);
-        return false;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goBack();
       },
       child: Scaffold(
         backgroundColor: Colors.white,
+        appBar: _buildAppBar(context, title),
         body: FutureBuilder<Map<String, dynamic>?>(
               future: _future,
               builder: (context, snapshot) {
@@ -2341,7 +2365,7 @@ class _PMFormPageState extends State<PMFormPage> {
                 }
 
                 return ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
                     Card(
                       elevation: 6,
@@ -2359,7 +2383,7 @@ class _PMFormPageState extends State<PMFormPage> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    'PM Details',
+                                    project.isEmpty ? 'PM Form' : project,
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w900,
@@ -2381,6 +2405,21 @@ class _PMFormPageState extends State<PMFormPage> {
                                 ),
                               ],
                             ),
+                            if (zone.isNotEmpty || location.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                [
+                                  if (zone.isNotEmpty) zone,
+                                  if (location.isNotEmpty) location,
+                                ].join(' · '),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _isDarkMode
+                                      ? Colors.white70
+                                      : Colors.black54,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 12),
                             Container(
                               padding: const EdgeInsets.all(12),
