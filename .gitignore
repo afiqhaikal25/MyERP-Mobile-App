@@ -1,0 +1,82 @@
+# Python (local tooling / scripts)
+venv/
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+lib/serverkey.dart
+lib/serverkey.local.dart
+lib/pushnoti/serverkey.dart
+lib/pushnoti/test_server_key.dart
+service_account_key.json
+
+# Environment variables and sensitive data
+.env
+.env.local
+.env.production
+*.env
+
+# Firebase service account keys
+firebase-service-account.json
+google-services.json
+GoogleService-Info.plist
+
+# API Keys and sensitive configuration
+*_key.txt
+*_secret.txt
+config_secret.dart
+
+# Release APK (build locally; do not commit)
+*.apk
+myerp.com Mobile App.apk
+
+# Odoo server code (separate deployment)
+myerp web odoo/
+
+# Large log files
+*.log
+build_log.txt
+flutter_log.txt
+firepit-log.txt

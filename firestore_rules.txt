@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow users to read/write their own notification data
+    match /users/{userEmail} {
+      allow read, write: if request.auth != null && 
+        (request.auth.token.email == userEmail || 
+         request.auth.token.email_verified == true);
+    }
+    
+    // Allow read access to all users (for admin purposes)
+    match /{document=**} {
+      allow read: if request.auth != null;
+    }
+  }
+} 

@@ -1,0 +1,1060 @@
+<odoo>
+    <record id="view_stock_production_lot_form" model="ir.ui.view">
+        <field name="name">stock.production.lot.form</field>
+        <field name="model">stock.production.lot</field>
+        <field name="inherit_id" ref="stock.view_production_lot_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//button[@name='action_lot_open_quants']" position="before">
+                <button name="action_open_details_lot"
+                            string="Assets Preview"
+                            type="object"
+                            class="oe_stat_button"
+                            icon="fa-globe icon"
+                            attrs="{'invisible': [('location_store', '=', True)]}"/>
+                <button name="action_open_sign_lot"
+                            string="Signature Preview"
+                            type="object"
+                            class="oe_stat_button"
+                            icon="fa-globe icon"
+                            attrs="{'invisible': [('location_store', '=', True)]}"/>
+            </xpath>
+            <xpath expr="//field[@name='product_id']" position="before">
+                <field name="location_type"/>
+		<field name="status_UAT"/>
+                <field name="location_store" invisible="1"/>
+                <field name="equipment_printer" invisible="1"/>
+            </xpath>
+            <xpath expr="//field[@name='company_id']" position="after">
+                <field name="equipment_type" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                <field name="project_id" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                <field name="partner_id" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                <field name="qr_code" widget="image" options="{'preview_image': 'qr_code'}"/>
+            </xpath>
+            <xpath expr="//group[@name='main_group']" position="after">
+                <group string="User Details" attrs="{'invisible': [('location_store', '=', True)]}">
+                            <group>
+                                <field name="equipment_user" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                                <field name="equipment_location" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                                <field name="equipment_user_mail" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                                <field name="equipment_user_no" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                                <field name="name"/>
+                                <field name="standard_naming" attrs="{'invisible': [('equipment_printer', '=', True)]}"/>
+				<field name="ip_address_lot"/>
+                                <field name="note_user"/>
+                            </group>
+                        </group>
+                <group string="Equipment Details" attrs="{'invisible': [('location_store', '=', True)]}">
+                    <group>
+                        <field name="product_cpu" readonly="1" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                        <field name="product_type_of_memory" readonly="1" attrs="{'invisible': [('location_store', '=', True)]}"/>
+                        <field name="product_hard_disk" readonly="1" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                        <field name="product_graphic" readonly="1" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                      </group>
+                    <group>
+                        <label for="product_monitor" string="Monitor/Serial Number" attrs="{'invisible': [('equipment_printer', '=', True)]}"/>
+                            <div name="monitors" class="o_row">
+                                <field name="product_monitor" readonly="1" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <i class="fa fa-long-arrow-right mx-2 oe_edit_only" aria-label="Arrow icon" title="Arrow" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <i class="fa fa-long-arrow-right mx-2 oe_read_only" aria-label="Arrow icon" title="Arrow" attrs="{'invisible': [('product_monitor', '=', False), ('monitor_lot', '=', False)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <field name="monitor_lot" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                            </div>
+                        <label for="product_keyboard" string="Keyboard/Serial Number" attrs="{'invisible': [('equipment_printer', '=', True)]}"/>
+                            <div name="keyboards" class="o_row">
+                                <field name="product_keyboard" readonly="1" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <i class="fa fa-long-arrow-right mx-2 oe_edit_only" aria-label="Arrow icon" title="Arrow" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <i class="fa fa-long-arrow-right mx-2 oe_read_only" aria-label="Arrow icon" title="Arrow" attrs="{'invisible': [('product_keyboard', '=', False), ('keyboard_lot', '=', False)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <field name="keyboard_lot" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                            </div>
+                        <label for="product_mouse" string="Mouse/Serial Number" attrs="{'invisible': [('equipment_printer', '=', True)]}"/>
+                            <div name="mouses" class="o_row">
+                                <field name="product_mouse" readonly="1" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <i class="fa fa-long-arrow-right mx-2 oe_edit_only" aria-label="Arrow icon" title="Arrow" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <i class="fa fa-long-arrow-right mx-2 oe_read_only" aria-label="Arrow icon" title="Arrow" attrs="{'invisible': [('product_mouse', '=', False), ('mouse_lot', '=', False)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                                <field name="mouse_lot" attrs="{'invisible': [('location_store', '=', True)], 'invisible': [('equipment_printer', '=', True)]}"/>
+                            </div>
+                        <field name="note_spec"/>
+                        </group>
+                    </group>
+               <group string="Configuration Details" attrs="{'invisible': [('location_store', '=', True)]}">
+                <field name="software_details" widget="section_and_note_one2many" attrs="{'invisible': [('equipment_printer', '=', True)]}">
+                    <tree editable="bottom">
+                        <field name="name" string="Software Detail"/>
+                        <field name="os" widget="boolean_toggle"/>
+                        <field name="note_os" string="Note"/>
+                    </tree>
+                    <form>
+                        <group>
+                            <field name="name"/>
+                            <field name="os" widget="boolean_toggle"/>
+                            <field name="note_os"/>
+                        </group>
+                    </form>
+                </field>
+                <field name="configuration_details" widget="section_and_note_one2many">
+                    <tree editable="bottom">
+                        <field name="name" string="Configuration Detail"/>
+                        <field name="conf" widget="boolean_toggle"/>
+                        <field name="note_conf" string="Note"/>
+                    </tree>
+                    <form>
+                        <group>
+                            <field name="name"/>
+                            <field name="conf" widget="boolean_toggle"/>
+                            <field name="note_conf"/>
+                        </group>
+                    </form>
+                </field>
+                   <group>
+                       <field name="note_config"/>
+                   </group>
+            </group>
+
+            <notebook attrs="{'invisible': [('location_store', '=', True)]}">
+                    <page string="User Signature" name="user_sign">
+                        <group>
+                        <field name="user_signature" string="User Signature" widget="image" readonly="True"/>
+                        <field name="user_signature_date" string="Date" readonly="True"/>
+                        </group>
+                        <group>
+                        <field name="qr_code_user" widget="image" string="Qr Code Signature" options="{'preview_image': 'qr_code_user'}"/>
+                        </group>
+                    </page>
+                <page string="Technician Signature" name="tech_sign">
+                        <group>
+                        <field name="technician" string="Technician Signature"/>
+                        </group>
+                    </page>
+                </notebook>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_product_spec_form" model="ir.ui.view">
+        <field name="name">product.template.common.form</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <!-- Tambah page baharu di dalam notebook -->
+            <xpath expr="//notebook" position="inside">
+                <page string="Specification" name="specification_stock_ext">
+                    <group>
+                        <group>
+                            <field name="cpu"/>
+                            <field name="type_of_memory"/>
+                            <field name="hard_disk"/>
+                            <field name="graphic"/>
+                            <field name="monitor"/>
+                            <field name="keyboard"/>
+                            <field name="mouse"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+
+    <record id="view_project_inherit_form" model="ir.ui.view">
+        <field name="name">project.project.form</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.edit_project"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='partner_id']" position="after">
+                <field name="contract_no"/>
+            </xpath>
+        </field>
+    </record>
+
+    <template id="lot_serial_template" name="Lot/Serial Number Template">
+    <t t-call="website.layout">
+        <section class="s_text_block o_colored_level pt56 pb96 o_we_force_no_transition" data-snippet="s_text_block" data-name="Text" style="background-image: none; position: relative;" data-oe-shape-data="{&quot;shape&quot;:&quot;web_editor/Bold/05_001&quot;,&quot;flip&quot;:[]}">
+            <div class="o_we_shape o_web_editor_Bold_05_001 o_we_force_no_transition"/>
+            <div class="s_allow_columns container">
+                <div class="container">
+                    <h2 class="text-o-color-1" style="text-align: center;">Equipment Detail</h2>
+                    <br></br>
+                    <table class="table table-bordered">
+                        <tbody>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Contract No.</strong></td>
+                                <t t-if="lot.project_id">
+                                    <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.project_id.contract_no"/></td>
+                                </t>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Serial Number</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.name"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Brand/Model</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.product_id.name"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>User</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.equipment_user"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>User E-Mail</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.equipment_user_mail"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>User Number Phone</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.equipment_user_no"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Location</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.equipment_location"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Project</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.project_id.name"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Project Duration</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.project_id.date_start"/> - <t t-esc="lot.project_id.date"/></td>
+                            </tr>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Right of Ownership</strong></td>
+                                <td style="word-wrap: break-word; white-space: normal;">SIGMA RECTRIX SYSTEMS (M) SDN BHD</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </t>
+</template>
+
+    <template id="report_serial_number_qr_template">
+            <t t-call="web.basic_layout">
+                <t t-foreach="docs" t-as="lot">
+                    <div class="page">
+                    <div class="oe_structure"/>
+                    <div class="row">
+                        <div class="col-8">
+                            <table class="table table-condensed" style="border-bottom: 0px solid white !important;width: 3in;">
+                                <tr>
+                                  <th style="text-align: center;">
+                                      <span>SN:</span>
+                                      <span t-field="lot.name"/>
+                                  </th>
+                                </tr>
+                                <tr>
+                                    <td style="text-align: center; vertical-align: middle;" class="col-5">
+                                        <img t-att-src="'data:image/png;base64,%s' % lot.qr_code.decode('utf-8')" style="width: 177px; height: 177px;"/>
+                                    </td>
+                                </tr>
+                                <tr name="lot_name" style="text-align: center;">
+                                    <th>
+                                        <span t-field="lot.product_id.display_name"/>
+                                    </th>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                </t>
+            </t>
+        </template>
+
+    <template id="report_uat_template">
+        <t t-call="web.basic_layout">
+           <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    font-size: 15px;
+                    /* Add any other global styles here */
+                    margin: 0;
+                }
+
+                table {
+                    height: 28px; /* Set the height of all tables */
+                    /* You may want to adjust other table styles as needed */
+                    border-collapse: collapse;
+                    width: 100%;
+                    table-layout: fixed;
+                }
+
+               th, td {
+                    vertical-align: middle; /* Center content vertically */
+                }
+
+                /* Add more specific styles as per your requirements */
+            </style>
+
+                <t t-foreach="docs" t-as="doc">
+                    <div class="page">
+                <!-- Header Image -->
+                        <div class="header">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 50%; padding: 0px; text-align: center;">
+                            <t t-if="doc.partner_id.image_1920">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.partner_id.image_1920.decode('utf-8')" style="width: 100px;"/>
+                            </t>
+                        </td>
+                        <td style="width: 50%; padding: 0px; text-align: center;">
+                            <t t-if="doc.company_id.logo">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.company_id.logo.decode('utf-8')" style="width: 230px;"/>
+                            </t>
+                        </td>
+                    </tr>
+                </table>
+                            </div>
+                        <div class="content">
+
+                <!-- Document Title -->
+                <h4 style="text-align: center; font-weight: bold;">SENARAI SEMAK UJIAN PENERIMAAN PENGGUNA [UAT]</h4>
+
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 5px; color: #1f497d; border-bottom: none; font-weight: bold;">PERALATAN : KOMPUTER DESKTOP</th>
+                    </tr>
+                </table>
+                <!-- User Information -->
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 5px;"><strong>Nama Pengguna</strong></td>
+                        <td style="width: 80%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.equipment_user"/></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 5px;"><strong>Bahagian</strong></td>
+                        <td style="width: 80%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.equipment_location"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 5px; border-top: none;"><strong>Fon | E-mail</strong></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px; border-top: none;"><t t-esc="doc.equipment_user_no"/> | <t t-esc="doc.equipment_user_mail"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px; border-bottom: none; border-top: none;"><strong>Catatan :</strong></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 5px;"><strong>Nombor Siri CPU</strong></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.name"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px; border-top: none; border-bottom: none;"><t t-esc="doc.note_user"/></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 5px;"><strong>Penamaan Standard</strong></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.standard_naming"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px; border-top: none;"></td>
+                    </tr>
+                </table>
+                <br> </br>
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 5px; color: #1f497d; border-bottom: none; font-weight: bold;">MAKLUMAT SPESIFIKASI PERALATAN ICT</th>
+                    </tr>
+                </table>
+                <!-- Equipment Details -->
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 5px;"><strong>Model</strong></td>
+                        <td style="width: 45%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.product_id.name"/></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 5px;"><strong>Grafik</strong></td>
+                        <td style="width: 30%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.product_id.graphic"/></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 5px;"><strong>CPU</strong></td>
+                        <td style="width: 45%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.product_id.cpu"/></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 5px;"><strong>Skrin</strong></td>
+                        <td style="width: 30%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.product_id.monitor"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 5px; border-top: none;"><strong>Jenis Memori</strong></td>
+                        <td style="width: 45%; border: 1px solid #000; padding: 5px; border-top: none;"><t t-esc="doc.product_id.type_of_memory"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px; border-bottom: none; border-top: none;"><strong>Catatan :</strong></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 5px;"><strong>Cakera Keras</strong></td>
+                        <td style="width: 45%; border: 1px solid #000; padding: 5px;"><t t-esc="doc.product_id.hard_disk"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 5px; border-top: none; "><t t-esc="doc.note_spec"/></td>
+                    </tr>
+                </table>
+                <br></br>
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 5px; color: #1f497d; border-bottom: none; font-weight: bold;">MAKLUMAT KONFIGURASI</th>
+                    </tr>
+                </table>
+                <!-- Configuration Details -->
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; text-align: center;"><strong>BUTIRAN PERISIAN</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center;"><strong>STATUS</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center;"><strong>CATATAN</strong></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; text-align: center;"><strong>BUTIRAN PERKAKASAN</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center;"><strong>STATUS</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center;"><strong>CATATAN</strong></td>
+
+                    </tr>
+                </table>
+                <t t-set="software_detail_0" t-value="doc.software_details[0] if doc.software_details and len(doc.software_details) > 0 else False"/>
+                <t t-set="software_detail_1" t-value="doc.software_details[1] if doc.software_details and len(doc.software_details) > 1 else False"/>
+                <t t-set="software_detail_2" t-value="doc.software_details[2] if doc.software_details and len(doc.software_details) > 2 else False"/>
+                <t t-set="software_detail_3" t-value="doc.software_details[3] if doc.software_details and len(doc.software_details) > 3 else False"/>
+                <t t-set="software_detail_4" t-value="doc.software_details[4] if doc.software_details and len(doc.software_details) > 4 else False"/>
+                <t t-set="software_detail_5" t-value="doc.software_details[5] if doc.software_details and len(doc.software_details) > 5 else False"/>
+                <t t-set="software_detail_6" t-value="doc.software_details[6] if doc.software_details and len(doc.software_details) > 6 else False"/>
+
+                <t t-set="configuration_detail_0" t-value="doc.configuration_details[0] if doc.configuration_details and len(doc.configuration_details) > 0 else False"/>
+                <t t-set="configuration_detail_1" t-value="doc.configuration_details[1] if doc.configuration_details and len(doc.configuration_details) > 1 else False"/>
+
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong><t t-if="software_detail_0" t-esc="software_detail_0.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_0 and software_detail_0.os">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_0" t-esc="software_detail_0.note_os"/></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong>Semakan Monitor</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;">Selesai</td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong><t t-if="software_detail_1" t-esc="software_detail_1.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_1 and software_detail_1.os">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_1" t-esc="software_detail_1.note_os"/></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong>Semakan Papan Kekunci</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;">Selesai</td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none; height: 20px;"><strong><t t-if="software_detail_2" t-esc="software_detail_2.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_2 and software_detail_2.os">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_2" t-esc="software_detail_2.note_os"/></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong>Semakan Tetikus</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;">Selesai</td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none; height: 20px;"><strong><t t-if="software_detail_3" t-esc="software_detail_3.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_3 and software_detail_3.os">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_3" t-esc="software_detail_3.note_os"/></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong>Semakan Speaker dan Kamera</strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;">Selesai</td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong><t t-if="software_detail_4" t-esc="software_detail_4.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_4 and software_detail_4.os">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_4" t-esc="software_detail_4.note_os"/></td>
+                        <td style="width: 49.9%; border: 1px solid #000; padding: 5px; border-top: none; text-align: center;"><strong>KONFIGURASI</strong></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong><t t-if="software_detail_5" t-esc="software_detail_5.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_5 and software_detail_5.os">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_5" t-esc="software_detail_5.note_os"/></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none;"><strong><t t-if="configuration_detail_0" t-esc="configuration_detail_0.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="configuration_detail_0 and configuration_detail_0.conf">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="configuration_detail_0" t-esc="configuration_detail_0.note_conf"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none; height: 20px;"><strong><t t-if="software_detail_6" t-esc="software_detail_6.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_6 and software_detail_6.os">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="software_detail_6" t-esc="software_detail_6.note_os"/></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-top: none; "><strong><t t-if="configuration_detail_1" t-esc="configuration_detail_1.name"/></strong></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="configuration_detail_1 and configuration_detail_1.conf">Selesai</t></td>
+                        <td style="width: 12%; border: 1px solid #000; padding: 5px; text-align: center; border-top: none;"><t t-if="configuration_detail_1" t-esc="configuration_detail_1.note_conf"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 100%; border: 1px solid #000; padding: 5px; border-top: none; height: 50px;"><strong>Catatan : </strong><t t-esc="doc.note_config"/></td>
+                    </tr>
+                </table>
+                <div style="page-break-before: always;"></div>
+
+
+                <!-- Certification Section -->
+
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 5px; color: #1f497d; border-bottom: none; font-weight: bold;">PERSIJILAN</th>
+                    </tr>
+                </table>
+                <p>1. Saya dengan ini berjanji sepanjang saya berkhidmat untuk:-</p>
+                <ul>
+                    <li>Memastikan Peralatan dibawah jagaan saya dalam keadaan baik.</li>
+                    <li>Tidak akan memindahkan peralatan diatas tanpa persetujuan bertulis dari BTM.</li>
+                    <li>Bersedia menerima sebarang tindakan sekiranya berlaku kehilangan @ kerosakan peralatan yang disebabkan oleh kecuaian, kelalaian @ tindakan sengaja saya sendiri </li>
+                </ul>
+                <p>2. Kerja – Kerja pemasangan peralatan ICT telah dilaksanakan mengikut spesifikasi dan peraturan yang telah ditetapkan.</p>
+                <p>3. Dengan ini adalah disahkan bahawa pemasangan peralatan ICT telah dilaksanakan pada tarikh berikut:-</p>
+
+                <!-- Signature Section -->
+                <br></br>
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 5px; color: #1f497d; border-bottom: none; font-weight: bold;">DISAHKAN OLEH :</th>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 12px; display: flex; justify-content: center; align-items: center;">
+                    <colgroup>
+                        <col style="width: 24%"/>
+                        <col style="width: 26%"/>
+                        <col style="width: 24%"/>
+                        <col style="width: 26%"/>
+                    </colgroup>
+                    <tr>
+                        <td style="border: 1px solid #000; border-bottom: none; text-align: center; font-size: 12px;"><strong>TANDATANGAN PENGGUNA</strong></td>
+                        <td style="border: 1px solid #000; border-bottom: none; text-align: center;">
+                            <t t-if="doc.user_signature">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.user_signature.decode('utf-8')" style="max-width: 150px; width: 100%; height: auto;"/>
+                            </t>
+                        </td>
+                        <td style="border: 1px solid #000; padding: 5px; border-bottom: none; text-align: center; font-size: 12px;"><strong>TANDATANGAN JURUTEKNIK</strong></td>
+                        <td style="border: 1px solid #000; padding: 5px; border-bottom: none; text-align: center; overflow: hidden; object-position: center;">
+                            <t t-if="doc.technician">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.technician.digital_signature.decode('utf-8')" style=" width: 150px; height: auto; object-fit: cover; object-position: center;"/>
+                            </t>
+                        </td>
+                    </tr>
+                </table>
+
+                <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 12px; display: flex; justify-content: center; align-items: center;">
+                    <tr>
+                        <td style="width: 24%; border: 1px solid #000; padding: 5px; border-bottom: none; text-align: center; vertical-align: center;  font-size: 12px;"><strong>NAMA PENGGUNA</strong></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-bottom: none; text-align: center; font-size: 12px;"><t t-esc="doc.equipment_user"/></td>
+                        <td style="width: 24%; border: 1px solid #000; padding: 5px; border-bottom: none; text-align: center; font-size: 12px;"><strong>NAMA WAKIL SIGMA</strong></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; border-bottom: none; text-align: center; font-size: 12px;"><t t-esc="doc.technician.name"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 24%; border: 1px solid #000; padding: 5px; text-align: center; font-size: 12px;"><strong>TARIKH</strong></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; text-align: center; font-size: 12px;"><t t-esc="doc.user_signature_date"/></td>
+                        <td style="width: 24%; border: 1px solid #000; padding: 5px; text-align: center; font-size: 12px;"><strong>TARIKH</strong></td>
+                        <td style="width: 26%; border: 1px solid #000; padding: 5px; text-align: center; font-size: 12px;"><t t-esc="doc.user_signature_date"/></td>
+                    </tr>
+                </table>
+
+
+                        </div>
+
+            </div>
+                    <div style="page-break-before: always;"></div>
+                 </t>
+            </t>
+</template>
+
+<template id="report_uat_printer_template">
+        <t t-call="web.html_container">
+                <t t-foreach="docs" t-as="doc">
+                    <div class="page">
+                <!-- Header Image -->
+                        <div class="header">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 50%; padding: 0px; text-align: center;">
+                            <t t-if="doc.partner_id.image_1920">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.partner_id.image_1920.decode('utf-8')" style="width: 177px;"/>
+                            </t>
+                        </td>
+                        <td style="width: 50%; padding: 0px; text-align: center;">
+                            <t t-if="doc.company_id.logo">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.company_id.logo.decode('utf-8')" style="width: 230px;"/>
+                            </t>
+                        </td>
+                    </tr>
+                </table>
+                            </div>
+                        <div class="content">
+
+                <!-- Document Title -->
+                <h3 style="text-align: center; font-weight: bold;">SENARAI SEMAK UJIAN PENERIMAAN PENGGUNA [UAT]</h3>
+
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center; font-size: 11.5px;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 8px; color: #1f497d; border-bottom: none; font-weight: bold;">PERALATAN : PRINTER</th>
+                    </tr>
+                </table>
+                <!-- User Information -->
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 8px;"><strong>Username</strong></td>
+                        <td style="width: 80%; border: 1px solid #000; padding: 8px;"><t t-esc="doc.equipment_user"/></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 8px;"><strong>Department</strong></td>
+                        <td style="width: 80%; border: 1px solid #000; padding: 8px;"><t t-esc="doc.equipment_location"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 8px; border-top: none;"><strong>Phone | Email</strong></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 8px; border-top: none;"><t t-esc="doc.equipment_user_no"/> | <t t-esc="doc.equipment_user_mail"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 8px; border-bottom: none; border-top: none;"><strong>Note :</strong></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 8px;"><strong>Serial number</strong></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 8px;"><t t-esc="doc.name"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 8px; border-top: none; border-bottom: none;"><t t-esc="doc.note_user"/></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 20%; border: 1px solid #000; padding: 8px;"><strong>IP Printer</strong></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 8px;"><t t-esc="doc.standard_naming"/></td>
+                        <td style="width: 40%; border: 1px solid #000; padding: 8px; border-top: none;"></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center; font-size: 11.5px;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 8px; color: #1f497d; border-bottom: none; border-top: none; font-weight: bold;">MAKLUMAT SPESIFIKASI PERALATAN ICT</th>
+                    </tr>
+                </table>
+                <!-- Equipment Details -->
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px;"><strong>Model</strong></td>
+                        <td style="width: 35%; border: 1px solid #000; padding: 8px;"><t t-esc="doc.product_id.name"/></td>
+                        <td style="width: 50%; border: 1px solid #000; padding: 8px; border-bottom: none;"><strong>Note :</strong></td>
+                    </tr>
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px;"><strong>Type of Memory</strong></td>
+                        <td style="width: 35%; border: 1px solid #000; padding: 8px;"><t t-esc="doc.product_id.type_of_memory"/></td>
+                        <td style="width: 50%; border: 1px solid #000; padding: 8px; border-bottom: none; border-top: none;"></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px; border-top: none;"><strong>Print Technology</strong></td>
+                        <td style="width: 35%; border: 1px solid #000; padding: 8px; border-top: none;"><t t-esc="doc.product_id.cpu"/></td>
+                        <td style="width: 50%; border: 1px solid #000; padding: 8px; border-bottom: none; border-top: none;"></td>
+                    </tr>
+                    <tr>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center; font-size: 11.5px;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 8px; color: #1f497d; border-bottom: none; font-weight: bold;">MAKLUMAT KONFIGURASI</th>
+                    </tr>
+                </table>
+                <!-- Configuration Details -->
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 70%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center;"><strong>DETAIL</strong></td>
+                        <td style="width: 30%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center;"><strong>STATUS</strong></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 70%; border: 1px solid #000; padding: 8px; border-top: none; text-align: center;"><strong>SOFTWARE</strong></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center;"><strong>YES</strong></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center;"><strong>NO</strong></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center;"><strong>NOTE</strong></td>
+                    </tr>
+                </table>
+
+                <t t-set="configuration_detail_0" t-value="doc.configuration_details[0] if doc.configuration_details and len(doc.configuration_details) > 0 else False"/>
+                <t t-set="configuration_detail_1" t-value="doc.configuration_details[1] if doc.configuration_details and len(doc.configuration_details) > 1 else False"/>
+                <t t-set="configuration_detail_2" t-value="doc.configuration_details[2] if doc.configuration_details and len(doc.configuration_details) > 2 else False"/>
+                <t t-set="configuration_detail_3" t-value="doc.configuration_details[3] if doc.configuration_details and len(doc.configuration_details) > 3 else False"/>
+
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 70%; border: 1px solid #000; padding: 8px; border-top: none;"><t t-if="configuration_detail_0" t-esc="configuration_detail_0.name"/></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_0 and configuration_detail_0.conf">Yes</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_0 and not configuration_detail_0.conf">No</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_0" t-esc="configuration_detail_0.note_conf"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 70%; border: 1px solid #000; padding: 8px; border-top: none;"><t t-if="configuration_detail_1" t-esc="configuration_detail_1.name"/></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_1 and configuration_detail_1.conf">Yes</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_1 and not configuration_detail_1.conf">No</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_1" t-esc="configuration_detail_1.note_conf"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 70%; border: 1px solid #000; padding: 8px; border-top: none;"><t t-if="configuration_detail_2" t-esc="configuration_detail_2.name"/></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_2 and configuration_detail_2.conf">Yes</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_2 and not configuration_detail_2.conf">No</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_2" t-esc="configuration_detail_2.note_conf"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 70%; border: 1px solid #000; padding: 8px; border-top: none;"><t t-if="configuration_detail_3" t-esc="configuration_detail_3.name"/></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_3 and configuration_detail_3.conf">Yes</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_3 and not configuration_detail_3.conf">No</t></td>
+                        <td style="width: 10%; border: 1px solid #000; padding: 8px; text-align: center; border-top: none;"><t t-if="configuration_detail_3" t-esc="configuration_detail_3.note_conf"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                    <tr>
+                        <td style="width: 100%; border: 1px solid #000; padding: 8px; border-top: none;"><strong>Catatan : </strong><t t-esc="doc.note_config"/></td>
+                    </tr>
+                </table>
+
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center; ">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 8px; color: #1f497d; border-bottom: none; border-top: none; font-weight: bold; font-size: 11.5px;">CERTIFICATION</th>
+                    </tr>
+                </table>
+                <p style="font-size: 11.5px;">1. I hereby promise that during my tenure as ASWARA I will:</p>
+                <ul style="font-size: 11.5px;">
+                    <li>Ensure that the equipment under my care is in the good condition.</li>
+                    <li>Not move the above equipment without written approval from BTM ASWARA.</li>
+                    <li>Be prepared to accept any action in the event of loss or damage to the equipment caused by my own negligence, carelessness, or intentional actions.</li>
+                </ul>
+                <p style="font-size: 11.5px;">2. ICT equipment installation work has been carried out according to the specified specifications and regulations.</p>
+                <p style="font-size: 11.5px;">3. It is hereby certified that the ICT equipment installation was completed on the following date:</p>
+                <table style="width: 100%; border-collapse: collapse; background-color: #c6d9f1; text-align: center;">
+                    <tr>
+                        <th style="border: 1px solid #000; padding: 8px; color: #1f497d; border-bottom: none; font-weight: bold; font-size: 13.5px;">Certified By:</th>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <colgroup>
+                        <col style="width: 15%"/>
+                        <col style="width: 18.3333333333%"/>
+                        <col style="width: 15%"/>
+                        <col style="width: 18.3333333333%"/>
+                        <col style="width: 15%"/>
+                        <col style="width: 18.3333333333%"/>
+                    </colgroup>
+                    <tr>
+                        <td style="border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 11px;"><strong>SIGNATURE and DEPARTMENT STAMP</strong></td>
+                        <td style="border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 11px; overflow: hidden;">
+                            <t t-if="doc.user_signature">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.user_signature.decode('utf-8')" style="max-width: 150px; max-height: 75px; width: 100%; height: auto; object-fit: cover;"/>
+                            </t>
+                        </td>
+                        <td style="border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 11px;"><strong>SIGNATURE and DEPARTMENT STAMP</strong></td>
+                        <td style="border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 11px;"><strong></strong></td>
+                        <td style="border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 11px;"><strong>SIGNATURE and DEPARTMENT STAMP</strong></td>
+                        <td style="border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; overflow: hidden;">
+                            <t t-if="doc.technician">
+                                <img t-att-src="'data:image/png;base64,%s' % doc.technician.digital_signature.decode('utf-8')" style="max-width: 200px; max-height: 100px; width: 100%; height: auto; object-fit: fill;"/>
+                            </t>
+                        </td>
+                    </tr>
+                </table>
+
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 12px;"><strong>USERNAME</strong></td>
+                        <td style="width: 18.3333333333%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 12px;"><t t-esc="doc.equipment_user"/></td>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 12px;"><strong>ASWARA VERIFICATION NAME</strong></td>
+                        <td style="width: 18.3333333333%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 12px;"><strong></strong></td>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 12px;"><strong>COMPANY REPRESENTATIVE NAME</strong></td>
+                        <td style="width: 18.3333333333%; border: 1px solid #000; padding: 8px; border-bottom: none; text-align: center; font-size: 12px;"><t t-esc="doc.technician.name"/></td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px;"><strong>DATE</strong></td>
+                        <td style="width: 18.3333333333%; border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px;"><t t-esc="doc.user_signature_date"/></td>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px;"><strong>DATE</strong></td>
+                        <td style="width: 18.3333333333%; border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px;"><strong></strong></td>
+                        <td style="width: 15%; border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px;"><strong>DATE</strong></td>
+                        <td style="width: 18.3333333333%; border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px;"><t t-esc="doc.user_signature_date"/></td>
+                    </tr>
+                </table>
+                            </div>
+            </div>
+                 </t>
+        </t>
+</template>
+
+<template id="lot_serial_template_sign" name="Lot/Serial Number Template">
+    <t t-call="website.layout">
+        <section class="s_text_block o_colored_level pt56 pb96 o_we_force_no_transition" data-snippet="s_text_block" data-name="Text" style="background-image: none; position: relative;" data-oe-shape-data="{&quot;shape&quot;:&quot;web_editor/Bold/05_001&quot;,&quot;flip&quot;:[]}">
+        <div class="o_we_shape o_web_editor_Bold_05_001 o_we_force_no_transition"/>
+        <div class="s_allow_columns container">
+            <div class="container">
+          <h3 class="text-o-color-1" style="text-align: center;">SENARAI SEMAK UJIAN PENERIMAAN PENGGUNA [UAT]</h3>
+                <br></br>
+                <table class="table table-bordered" >
+    <tbody>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="text-align: center; background-color: #c6d9f1;"><strong>User Detail</strong></td>
+        </tr>
+            </tbody>
+        </table>
+            <table class="table table-bordered">
+    <tbody>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Username</strong></td>
+            <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.equipment_user"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Department</strong></td>
+            <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.equipment_location"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Phone | E-Mail</strong></td>
+            <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.equipment_user_no"/> | <t t-esc="lot.equipment_user_mail"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Serial Number</strong></td>
+            <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.name"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="word-wrap: break-word; white-space: normal;"><strong>Standard Naming</strong></td>
+            <td style="word-wrap: break-word; white-space: normal;"><t t-esc="lot.standard_naming"/></td>
+        </tr>
+    </tbody>
+</table>
+
+        <table class="table table-bordered" >
+    <tbody>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="text-align: center; background-color: #c6d9f1;"><strong>MAKLUMAT SPESIFIKASI PERALATAN ICT</strong></td>
+        </tr>
+            </tbody>
+        </table>
+            <table class="table table-bordered" >
+    <tbody>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2"><strong>Model</strong></td>
+            <td><t t-esc="lot.product_id.name"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2"><strong>CPU </strong></td>
+            <td><t t-esc="lot.product_id.cpu"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2"><strong>Type of Memory</strong></td>
+            <td><t t-esc="lot.product_id.type_of_memory"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2"><strong>Hard Disk</strong></td>
+            <td><t t-esc="lot.product_id.hard_disk"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2"><strong>Graphic</strong></td>
+            <td><t t-esc="lot.product_id.graphic"/></td>
+        </tr>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2"><strong>Monitor</strong></td>
+            <td><t t-esc="lot.product_id.monitor"/></td>
+        </tr>
+            </tbody>
+        </table>
+
+        <table class="table table-bordered" >
+    <tbody>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="text-align: center; background-color: #c6d9f1;"><strong>MAKLUMAT KONFIGURASI</strong></td>
+        </tr>
+            </tbody>
+        </table>
+            <table class="table table-bordered">
+    <tbody>
+        <tr>
+            <td class="text-o-color-2"><strong>Software Details</strong></td>
+            <td class="text-o-color-2"><strong>Status</strong></td>
+            <td class="text-o-color-2"><strong>Note</strong></td>
+        </tr>
+        <t t-foreach="lot_serial_data" t-as="lot">
+            <t t-foreach="lot.software_details" t-as="software_detail">
+                <tr>
+                    <td><t t-esc="software_detail.name"/></td>
+                    <td>
+                        <t t-if="software_detail.os">
+                            Done
+                        </t>
+                    </td>
+                    <td><t t-esc="software_detail.note_os"/></td>
+                </tr>
+            </t>
+        </t>
+    </tbody>
+    <tbody>
+        <tr>
+            <td class="text-o-color-2"><strong>Configuration Details</strong></td>
+            <td class="text-o-color-2"><strong>Status</strong></td>
+            <td class="text-o-color-2"><strong>Note</strong></td>
+        </tr>
+        <t t-foreach="lot_serial_data" t-as="lot">
+            <t t-foreach="lot.configuration_details" t-as="configuration_detail">
+                <tr>
+                    <td><t t-esc="configuration_detail.name"/></td>
+                    <td>
+                        <t t-if="configuration_detail.conf">
+                            Done
+                        </t>
+                    </td>
+                    <td><t t-esc="configuration_detail.note_conf"/></td>
+                </tr>
+            </t>
+        </t>
+    </tbody>
+</table>
+       <table class="table table-bordered" >
+    <tbody>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="text-align: center; background-color: #c6d9f1;"><strong>CERTIFICATION</strong></td>
+        </tr>
+            </tbody>
+        </table>
+        <p>1. I hereby promise that during my tenure as ASWARA I will:</p>
+                <ul>
+                    <li>Ensure that the equipment under my care is in the good condition.</li>
+                    <li>Not move the above equipment without written approval from BTM ASWARA.</li>
+                    <li>Be prepared to accept any action in the event of loss or damage to the equipment caused by my own negligence, carelessness, or intentional actions.</li>
+                </ul>
+        <p>2. ICT equipment installation work has been carried out according to the specified specifications and regulations.</p>
+        <p>3. It is hereby certified that the ICT equipment installation was completed on the following date:</p>
+
+        <table class="table table-bordered" >
+    <tbody>
+        <tr t-foreach="lot_serial_data" t-as="lot">
+            <td class="text-o-color-2" style="text-align: center; background-color: #c6d9f1;"><strong>Certified By:</strong></td>
+        </tr>
+            </tbody>
+        </table>
+        <h3 class="text-o-color-1" style="text-align: center;">Signature</h3>
+                <table class="table table-bordered" style="text-align: center;">
+                        <tbody>
+                            <tr t-foreach="lot_serial_data" t-as="lot">
+                                <td>
+                                    <div style="text-align: center;">
+                                        <t t-if="lot.user_signature">
+                                            <img t-att-src="'data:image/png;base64,%s' % lot.user_signature.decode('utf-8')" style="max-width: 200px; max-height: 100px;"/>
+                                            <p>Username: <t t-esc="lot.equipment_user"/></p>
+                                            <p>Date: <t t-esc="lot.user_signature_date"/></p>
+
+                                        </t>
+                                        <t t-else="">
+                                            <div class="sign-editor" style="border: none;">
+
+                                                    <strong>Draw your signature</strong>
+                                                    <p>Username: <t t-esc="lot.equipment_user"/></p>
+                                                <div t-attf-id="signature_#{lot.id}" class="o_signature_full"
+                                                     t-att-data-id="lot.id"
+                                                     t-att-data-signature="signature"
+                                                     style="border: 1px solid #ddd; width: 200px; height: 100px; text-align: center; margin: auto;">
+                                                </div>
+                                                <br></br>
+
+                                                <button type="button" class="btn btn-secondary" id="saveSignatureBtn">Save</button>
+                                                <button type="button" class="btn btn-danger" id="clearSignatureBtn">Clear</button>
+                                            </div>
+                                            <!--<p>Username : <t t-esc="lot.equipment_user"/></p>
+                                            <strong>Draw your signature</strong>
+                                            <div t-attf-id="signature_#{lot.id}" class="o_signature_full"
+                                                 t-att-data-id="lot.id"
+                                                 t-att-data-signature="signature"
+                                                 style="border: 1px solid #ddd; width: 200px; height: 100px; text-align: center;">
+                                            </div>
+                                            <br></br>
+                                            <button type="button" class="btn btn-success btn-sm" id="saveSignatureBtn">Save</button>-->
+                                        </t>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+        </div>
+        </div>
+      </section>
+        </t>
+</template>
+
+<record id="action_stock_production_lot_download_qr" model="ir.actions.server">
+    <field name="name">Download QR Codes</field>
+    <field name="model_id" ref="stock.model_stock_production_lot"/>
+    <field name="binding_model_id" ref="stock.model_stock_production_lot"/>
+    <field name="state">code</field>
+    <field name="code">
+        action = env['stock.production.lot'].action_download_qr_codes()
+    </field>
+</record>
+
+<record id="view_product_template_form_inherit" model="ir.ui.view">
+    <field name="name">product.template.form.inherit</field>
+    <field name="model">product.template</field>
+    <field name="inherit_id" ref="product.product_template_form_view"/>
+    <field name="arch" type="xml">
+        <xpath expr="//notebook" position="inside">
+            <page string="Detail Templates" name="detail_templates_stock_ext">
+                <group>
+                    <field name="software_template_id"/>
+                    <field name="configuration_template_id"/>
+                </group>
+            </page>
+        </xpath>
+    </field>
+</record>
+
+
+    <record id="view_software_detail_template_form" model="ir.ui.view">
+        <field name="name">software.detail.template.form</field>
+        <field name="model">software.detail.template</field>
+        <field name="arch" type="xml">
+            <form string="Software Detail Template">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="software_details">
+                            <tree editable="bottom">
+                                <field name="name"/>
+                                <field name="is_default"/>
+                                <field name="os"/>
+                                <field name="note_os"/>
+                            </tree>
+                        </field>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_software_detail_template_tree" model="ir.ui.view">
+        <field name="name">software.detail.template.tree</field>
+        <field name="model">software.detail.template</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_configuration_detail_template_form" model="ir.ui.view">
+        <field name="name">configuration.detail.template.form</field>
+        <field name="model">configuration.detail.template</field>
+        <field name="arch" type="xml">
+            <form string="Configuration Detail Template">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="configuration_details">
+                            <tree editable="bottom">
+                                <field name="name"/>
+                                <field name="is_default"/>
+                                <field name="conf"/>
+                                <field name="note_conf"/>
+                            </tree>
+                        </field>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_configuration_detail_template_tree" model="ir.ui.view">
+        <field name="name">configuration.detail.template.tree</field>
+        <field name="model">configuration.detail.template</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+            </tree>
+        </field>
+    </record>
+
+</odoo>

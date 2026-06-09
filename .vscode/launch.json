@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MyERP (Auto Device)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "MyERP (Android USB)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "6X5LRSCQCYCE7XSO",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "MyERP (iOS)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "ios",
+      "program": "lib/main.dart"
+    }
+  ]
+}
