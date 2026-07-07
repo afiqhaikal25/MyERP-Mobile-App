@@ -62,11 +62,13 @@ service_account_key.json
 firebase-service-account.json
 google-services.json
 GoogleService-Info.plist
+lib/firebase_options.dart
 
 # API Keys and sensitive configuration
 *_key.txt
 *_secret.txt
 config_secret.dart
+lib/config/secrets.dart
 
 # Release APK (build locally; do not commit)
 *.apk
@@ -80,3 +82,7 @@ build_log.txt
 flutter_log.txt
 firepit-log.txt
 android/build/
+
+# Nested starter Flutter projects (not part of main app)
+technician/
+ticket_fixed/

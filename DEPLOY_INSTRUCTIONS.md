@@ -12,7 +12,7 @@ Deploy the FCM push notification endpoint to the Odoo server.
 Copy the file `odoo_push_notification.py` to the Odoo addons directory:
 
 ```bash
-# On the Odoo server (115.187.22.46)
+# On the Odoo server (<ODOO_SERVER_HOST>)
 sudo cp odoo_push_notification.py /usr/lib/python3/dist-packages/odoo/addons/
 ```
 
@@ -37,7 +37,7 @@ class FCMNotificationController(http.Controller):
 After deployment, test the endpoint:
 
 ```bash
-curl -X POST http://115.187.22.46:8040/api/fcm/send_notification \
+curl -X POST http://<ODOO_SERVER_HOST>:8040/api/fcm/send_notification \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Test Notification",

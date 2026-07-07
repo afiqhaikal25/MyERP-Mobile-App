@@ -15,6 +15,7 @@ import 'dart:async'; // ✅ Tambahkan ini untuk Timer
 import 'package:url_launcher/url_launcher.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../odoo_display.dart';
+import '../config/secrets.dart';
 
 Future<Position> determinePosition() async {
   bool serviceEnabled;
@@ -1073,7 +1074,7 @@ Future<void> _fetchCheckOutFromOdoo() async {
         debugPrint('DEBUG: Mencuba geocode alamat: $address');
         try {
           // Guna Google Maps Geocoding API secara langsung
-          String apiKey = 'AIzaSyDZ-xCpbuA7lEBEkA-TZjg1SZgDugcOseY';
+          String apiKey = Secrets.googleMapsApiKey;
           String encodedAddress = Uri.encodeComponent(address);
           String url = 'https://maps.googleapis.com/maps/api/geocode/json?address=$encodedAddress&key=$apiKey';
           
@@ -2253,7 +2254,7 @@ Future<void> _loadProgressFromSharedPreferences() async {
 
 Future<double?> getDrivingDistance(double startLat, double startLng, double endLat, double endLng) async {
   // Use the provided Google Maps API key
-  const apiKey = 'AIzaSyDZ-xCpbuA7lEBEkA-TZjg1SZgDugcOseY';
+  final apiKey = Secrets.googleMapsApiKey;
   
   try {
     final url = Uri.parse(

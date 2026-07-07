@@ -3527,7 +3527,7 @@ def get_lat_lon_from_address(address):
     import requests
     
     # Try Google Maps API first
-    google_api_key = "AIzaSyDZ-xCpbuA7lEBEkA-TZjg1SZgDugcOseY"
+    google_api_key = __import__("os").environ.get("GOOGLE_MAPS_API_KEY", "")
     google_url = "https://maps.googleapis.com/maps/api/geocode/json"
     google_params = {
         "address": address,
@@ -3640,7 +3640,7 @@ class GeolocationController(http.Controller):
                 }
             
             # Use Google Maps API for reverse geocoding
-            google_api_key = "AIzaSyDZ-xCpbuA7lEBEkA-TZjg1SZgDugcOseY"
+            google_api_key = __import__("os").environ.get("GOOGLE_MAPS_API_KEY", "")
             google_url = "https://maps.googleapis.com/maps/api/geocode/json"
             google_params = {
                 "latlng": f"{lat},{lon}",

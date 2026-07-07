@@ -62,7 +62,7 @@ class _OKRDetailsPageState extends State<OKRDetailsPage> with TickerProviderStat
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final odooUrl = prefs.getString('odooUrl') ?? 'http://10.0.0.164:8069';
+      final odooUrl = prefs.getString('odooUrl') ?? 'https://myerp.com.my';
       final sessionId = prefs.getString('sessionId') ?? '';
       final userId = prefs.getString('user_id') ?? '';
 
@@ -743,7 +743,7 @@ e.g. ticket list, ticket detail, create ticket, status update''',
 
   void _showDebugInfo() async {
     final prefs = await SharedPreferences.getInstance();
-    final odooUrl = prefs.getString('odooUrl') ?? 'http://10.0.0.164:8069';
+    final odooUrl = prefs.getString('odooUrl') ?? 'https://myerp.com.my';
     final sessionId = prefs.getString('sessionId') ?? '';
     final userId = prefs.getString('user_id') ?? '';
     
